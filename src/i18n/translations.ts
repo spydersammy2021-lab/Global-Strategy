@@ -1,0 +1,1333 @@
+import type {
+  BuildingType,
+  CommodityId,
+  DifficultyId,
+  IdeologyId,
+  Language,
+  RankId,
+  ScenarioId,
+  SeasonId,
+  UnitType,
+  WeatherKind,
+} from '../game/types';
+
+export const LANGUAGE_LABELS: Record<Language, string> = {
+  en: 'English (EN)',
+  pl: 'Polski (PL)',
+  szl: 'Ślōnsko godka (SZL)',
+  csb: 'Kaszëbsczi (CSB)',
+};
+
+export const MONTHS: Record<Language, string[]> = {
+  en: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+  pl: ['Styczeń', 'Luty', 'Marzec', 'Kwiecień', 'Maj', 'Czerwiec', 'Lipiec', 'Sierpień', 'Wrzesień', 'Październik', 'Listopad', 'Grudzień'],
+  szl: ['Styczyń', 'Luty', 'Marzec', 'Kwieciyń', 'Moj', 'Czyrwiec', 'Lipiec', 'Siyrpiyń', 'Wrzesiyń', 'Paździyrnik', 'Listopad', 'Grudziyń'],
+  csb: ['Stëcznik', 'Gromicznik', 'Strëmiannik', 'Łżëkwiôt', 'Môj', 'Czerwińc', 'Lëpińc', 'Zélnik', 'Séwnik', 'Rujan', 'Lëstopadnik', 'Gòdnik'],
+};
+
+export const RANK_NAMES: Record<Language, Record<RankId, string>> = {
+  en: { rekrut: 'Recruit', kapitan: 'Captain', general: 'General', marszalek: 'Marshal Blocks™' },
+  pl: { rekrut: 'Rekrut', kapitan: 'Kapitan', general: 'Generał', marszalek: 'Marszałek Blocks™' },
+  szl: { rekrut: 'Rekrut', kapitan: 'Kapitan', general: 'Gyneroł', marszalek: 'Marszołek Blocks™' },
+  csb: { rekrut: 'Rekrut', kapitan: 'Kapitón', general: 'Generôł', marszalek: 'Marszôłk Blocks™' },
+};
+
+export const IDEOLOGY_NAMES: Record<Language, Record<IdeologyId, string>> = {
+  en: { democracy: 'Democracy', republic: 'Federal Republic', monarchy: 'Constitutional Monarchy', technocracy: 'Technocracy', autocracy: 'Stratocracy' },
+  pl: { democracy: 'Demokracja', republic: 'Republika', monarchy: 'Monarchia', technocracy: 'Technokracja', autocracy: 'Autokracja' },
+  szl: { democracy: 'Dymokracyjo', republic: 'Republika', monarchy: 'Mōnarchijo', technocracy: 'Technokracyjo', autocracy: 'Autokracyjo' },
+  csb: { democracy: 'Demòkracjô', republic: 'Repùblika', monarchy: 'Mònarchiô', technocracy: 'Technòkracjô', autocracy: 'Aùtokracjô' },
+};
+
+export const COMMODITY_NAMES: Record<Language, Record<CommodityId, string>> = {
+  en: { energy: 'Energy', steel: 'Alloy Steel', rare_earths: 'Rare Earths', grain: 'Grain Reserve' },
+  pl: { energy: 'Energia', steel: 'Stal Stopowa', rare_earths: 'Ziemie Rzadkie', grain: 'Zboże' },
+  szl: { energy: 'Energijo', steel: 'Stal', rare_earths: 'Zymie Rzadke', grain: 'Zboże' },
+  csb: { energy: 'Energia', steel: 'Stal', rare_earths: 'Rzadczé Zemie', grain: 'Zbożé' },
+};
+
+export const DIFFICULTY_TEXT: Record<Language, Record<DifficultyId, { label: string; desc: string }>> = {
+  en: {
+    very_easy: { label: 'Very Easy', desc: '+50% income, +30% attack power' },
+    easy: { label: 'Easy', desc: '+25% player income' },
+    normal: { label: 'Normal', desc: 'Balanced AI simulation' },
+    hard: { label: 'Hard', desc: '+20% AI budget & mobilization' },
+    extreme: { label: 'Extreme', desc: '+40% AI defense & economy' },
+    extreme_plus: { label: '☠️ EXTREME+ (Impossible)', desc: '+75% AI economy, +55% defense & anti-player coalitions' },
+  },
+  pl: {
+    very_easy: { label: 'B. Łatwy', desc: '+50% dochodu, +30% siły ataku' },
+    easy: { label: 'Łatwy', desc: '+25% dochodu gracza' },
+    normal: { label: 'Średni', desc: 'Zrównoważona symulacja AI' },
+    hard: { label: 'Trudny', desc: '+20% budżetu i mobilizacji AI' },
+    extreme: { label: 'Ekstremalny', desc: '+40% obrony i gospodarki AI' },
+    extreme_plus: { label: '☠️ EXTREME+ (Niemożliwy)', desc: '+75% ekonomii AI, +55% obrony i globalne koalicje' },
+  },
+  szl: {
+    very_easy: { label: 'Fest Łatwy', desc: '+50% dochodu, +30% siyły ataku' },
+    easy: { label: 'Łatwy', desc: '+25% dochodu gracza' },
+    normal: { label: 'Strzedni', desc: 'Rōwno symulacyjo AI' },
+    hard: { label: 'Trudny', desc: '+20% budżetu AI' },
+    extreme: { label: 'Ekstremalny', desc: '+40% ôbrōny i gospodarki AI' },
+    extreme_plus: { label: '☠️ EXTREME+ (Niyzwyciynżony)', desc: '+75% ekōnōmije AI, +55% ôbrōny i koalicyje' },
+  },
+  csb: {
+    very_easy: { label: 'Baro Letczi', desc: '+50% dochòdu, +30% sëłë ataku' },
+    easy: { label: 'Letczi', desc: '+25% dochòdu gracza' },
+    normal: { label: 'Strzédny', desc: 'Zrównónô symulacjô AI' },
+    hard: { label: 'Trudny', desc: '+20% budżetu AI' },
+    extreme: { label: 'Ekstremalny', desc: '+40% òbronë i gòspòdarczi AI' },
+    extreme_plus: { label: '☠️ EXTREME+ (Niemòżebny)', desc: '+75% ekònomii AI, +55% òbronë i kòalicje' },
+  },
+};
+
+export const SEASON_NAMES: Record<Language, Record<SeasonId, string>> = {
+  en: { spring: 'Spring', summer: 'Summer', autumn: 'Autumn', winter: 'Winter' },
+  pl: { spring: 'Wiosna', summer: 'Lato', autumn: 'Jesień', winter: 'Zima' },
+  szl: { spring: 'Wiosna', summer: 'Lato', autumn: 'Jesiyń', winter: 'Zima' },
+  csb: { spring: 'Zymk', summer: 'Lato', autumn: 'Jeséń', winter: 'Zëma' },
+};
+
+export const WEATHER_NAMES: Record<Language, Record<WeatherKind, { label: string; effect: string }>> = {
+  en: {
+    sunny: { label: 'Clear', effect: '+15% Farm yield, optimal maneuvers' },
+    rain: { label: 'Heavy Rain', effect: '-15% Tanks, Artillery & Aviation attack' },
+    snow: { label: 'Blizzard / Frost', effect: '+25% defense, +1 MP march cost' },
+    fog: { label: 'Dense Fog', effect: '+10% province defense' },
+  },
+  pl: {
+    sunny: { label: 'Słonecznie', effect: '+15% plonów z Farm, idealny marsz' },
+    rain: { label: 'Ulewny deszcz', effect: '-15% siły czołgów, artylerii i lotnictwa' },
+    snow: { label: 'Śnieżyca / Mróz', effect: '+25% obrony, +1 PR kosztu marszu' },
+    fog: { label: 'Gęsta mgła', effect: '+10% obrony prowincji' },
+  },
+  szl: {
+    sunny: { label: 'Słōnecznie', effect: '+15% z Farm, dobry marsz' },
+    rain: { label: 'Srogi dyszcz', effect: '-15% pancyrōw, artyleryje i lotnictwa' },
+    snow: { label: 'Śnieżyca / Mrōz', effect: '+25% ôbrōny, droższy marsz (+1 PR)' },
+    fog: { label: 'Mgła', effect: '+10% ôbrōny prowincyje' },
+  },
+  csb: {
+    sunny: { label: 'Słoneczno', effect: '+15% z Farmów, dobri marsz' },
+    rain: { label: 'Ùlewny deszcz', effect: '-15% czôłgów, artilerii i lëtnictwa' },
+    snow: { label: 'Snieżëca / Mróz', effect: '+25% òbronë, +1 PR kòsztu marszu' },
+    fog: { label: 'Gãstô mgła', effect: '+10% òbronë prowincëji' },
+  },
+};
+
+export const SCENARIO_TEXT: Record<Language, Record<ScenarioId, { title: string; subtitle: string }>> = {
+  en: {
+    '966': { title: '966 · Baptism of Poland', subtitle: 'Mieszko I’s Realm & Early Medieval Europe' },
+    '1410': { title: '1410 · The Great War', subtitle: 'Kingdom of Poland, Lithuania & Teutonic Order' },
+    '1619': { title: '1619 · Golden Age', subtitle: 'Polish-Lithuanian Commonwealth at its zenith' },
+    '1918': { title: '1918 · Rebirth', subtitle: 'Post-Great War European order' },
+    '1939': { title: '1939 · World War II', subtitle: 'Global clash of superpowers' },
+    '2026': { title: '2026 · Modern World', subtitle: 'Contemporary geopolitics, orbital shields & Mars' },
+  },
+  pl: {
+    '966': { title: '966 · Chrzest Polski', subtitle: 'Państwo Polan Mieszka I i wczesna Europa' },
+    '1410': { title: '1410 · Wielka Wojna', subtitle: 'Korona Polska, Litwa i Zakon Krzyżacki' },
+    '1619': { title: '1619 · Złoty Wiek', subtitle: 'Potęga Rzeczypospolitej Obojga Narodów' },
+    '1918': { title: '1918 · Odrodzenie', subtitle: 'Nowy ład Europy po Wielkiej Wojnie' },
+    '1939': { title: '1939 · II Wojna Światowa', subtitle: 'Globalny konflikt mocarstw świata' },
+    '2026': { title: '2026 · Współczesny Świat', subtitle: 'Nowoczesna geopolityka i program kosmiczny' },
+  },
+  szl: {
+    '966': { title: '966 · Chrzest Polski', subtitle: 'Państwo Polan Mieszka I i wczesno Ojropa' },
+    '1410': { title: '1410 · Wielgo Wojna', subtitle: 'Korōna Polsko, Litwa a Krziżoki' },
+    '1619': { title: '1619 · Złoty Wiek', subtitle: 'Siyła Rzeczpospolityj Ôbōjga Narodōw' },
+    '1918': { title: '1918 · Ôdrodzynie', subtitle: 'Nowy porzōndek Ojropy po Wielgij Wojnie' },
+    '1939': { title: '1939 · II Wojna Światowo', subtitle: 'Globalny kōnflikt mocarstw' },
+    '2026': { title: '2026 · Dzisiejszy Świat', subtitle: 'Terōźno geopolitika i ôbrōna' },
+  },
+  csb: {
+    '966': { title: '966 · Chrzest Pòlsczi', subtitle: 'Państwò Pòlanów Mieszka I' },
+    '1410': { title: '1410 · Wiôlgô Wòjna', subtitle: 'Pòlskô Kòróna, Lëtewskô a Krzëżôcë' },
+    '1619': { title: '1619 · Złoti Wiek', subtitle: 'Mòc Rzeczpòspòlitëj Òbù Nôrodów' },
+    '1918': { title: '1918 · Òdrodzenié', subtitle: 'Nowi pòrządk Eùropë pò Wiôldżi Wòjnie' },
+    '1939': { title: '1939 · II Swiatowô Wòjna', subtitle: 'Swiatowi kònflikt mòcarstwów' },
+    '2026': { title: '2026 · Dzysdniowi Swiat', subtitle: 'Nowòczasnô geòpòlitika i òbrona' },
+  },
+};
+
+export const UNIT_NAMES: Record<Language, Record<UnitType, string>> = {
+  en: {
+    infantry: 'Infantry',
+    tanks: 'Main Battle Tanks',
+    rocket_artillery: 'Rocket Artillery',
+    anti_air: 'Air Defense',
+    aviation: 'Air Force',
+    naval_fleet: 'Naval Fleet',
+    archers: 'Archers / Musketeers',
+    cavalry: 'Cavalry / Hussars',
+    artillery: 'Artillery',
+  },
+  pl: {
+    infantry: 'Piechota',
+    tanks: 'Czołgi',
+    rocket_artillery: 'Artyleria Rakietowa',
+    anti_air: 'Obrona Przeciwlotnicza',
+    aviation: 'Lotnictwo',
+    naval_fleet: 'Flota Morska',
+    archers: 'Łucznicy / Muszkieterowie',
+    cavalry: 'Kawaleria / Husaria',
+    artillery: 'Artyleria',
+  },
+  szl: {
+    infantry: 'Piechota',
+    tanks: 'Pancyry (Czołgi)',
+    rocket_artillery: 'Rakietowo Artyleryjo',
+    anti_air: 'Przeciwlotniczo Ôbrōna',
+    aviation: 'Lotnictwo',
+    naval_fleet: 'Flota Morska',
+    archers: 'Łuczniki / Muszkietyry',
+    cavalry: 'Kawaleryjo / Husaryjo',
+    artillery: 'Artyleryjo',
+  },
+  csb: {
+    infantry: 'Piechòta',
+    tanks: 'Czôłdżi',
+    rocket_artillery: 'Rakietowô Artileria',
+    anti_air: 'Przecëwlëtnicznô Òbrona',
+    aviation: 'Lëtnictwò',
+    naval_fleet: 'Mòrskô Flota',
+    archers: 'Łëcznicë / Mùszkieterowie',
+    cavalry: 'Kawaleria / Hùsaria',
+    artillery: 'Artileria',
+  },
+};
+
+export const BUILDING_NAMES: Record<Language, Record<BuildingType, { name: string; desc: string }>> = {
+  en: {
+    factory: { name: 'Factory / Workshop', desc: '+4.5 PLN / month' },
+    farm: { name: 'Farm', desc: '+population growth & supply' },
+    barracks: { name: 'Barracks', desc: '-20% recruit cost' },
+    port: { name: 'Naval Port', desc: '+3.0 PLN / month & naval fleets' },
+    fort: { name: 'Fortress', desc: '+35% province defense' },
+    university: { name: 'University', desc: '+3.5 Research / month' },
+    coastal_defense: { name: 'Coastal Defense', desc: '+28% vs naval landings' },
+    missile_silo: { name: 'Missile Silo', desc: 'Enables ballistic & nuclear launches' },
+    spaceport: { name: 'Spaceport', desc: 'Required for Moon & Mars colonies' },
+  },
+  pl: {
+    factory: { name: 'Fabryka / Warsztat', desc: '+4.5 PLN / m-c' },
+    farm: { name: 'Farma', desc: '+populacja i zaopatrzenie' },
+    barracks: { name: 'Koszary', desc: '-20% koszt rekrutacji' },
+    port: { name: 'Port Morski', desc: '+3.0 PLN / m-c i flota morska' },
+    fort: { name: 'Fort', desc: '+35% obrony prowincji' },
+    university: { name: 'Uniwersytet', desc: '+3.5 pkt Badań / m-c' },
+    coastal_defense: { name: 'Obrona Wybrzeża', desc: '+28% przeciw desantom' },
+    missile_silo: { name: 'Silos Rakietowy', desc: 'Umożliwia ataki rakietowe i jądrowe' },
+    spaceport: { name: 'Kosmodrom', desc: 'Wymagany do kolonizacji kosmosu' },
+  },
+  szl: {
+    factory: { name: 'Fabryka', desc: '+4.5 PLN / m-c' },
+    farm: { name: 'Farma', desc: '+ludzie i jydzynie' },
+    barracks: { name: 'Koszary', desc: '-20% koszt werbōnku' },
+    port: { name: 'Port Morski', desc: '+3.0 PLN / m-c i flota' },
+    fort: { name: 'Fort', desc: '+35% ôbrōny prowincyje' },
+    university: { name: 'Uniwersytet', desc: '+3.5 Badań / m-c' },
+    coastal_defense: { name: 'Ôbrōna Brzegu', desc: '+28% na desant' },
+    missile_silo: { name: 'Silos Rakietowy', desc: 'Ataki rakietowe' },
+    spaceport: { name: 'Kosmodrom', desc: 'Kolōnizacyjo kosmosu' },
+  },
+  csb: {
+    factory: { name: 'Fabrika', desc: '+4.5 PLN / m-c' },
+    farm: { name: 'Bùr / Farma', desc: '+lëdztwò i zapòtrzebòwanié' },
+    barracks: { name: 'Kòszarë', desc: '-20% kòszt rekrùtacji' },
+    port: { name: 'Pòrt Mòrsczi', desc: '+3.0 PLN / m-c i flota' },
+    fort: { name: 'Fòrt', desc: '+35% òbronë prowincëji' },
+    university: { name: 'Ùniwersytet', desc: '+3.5 Badérowaniô / m-c' },
+    coastal_defense: { name: 'Òbrona Brzegu', desc: '+28% procëm desantowi' },
+    missile_silo: { name: 'Rakietowi Silos', desc: 'Ataczi rakietowé' },
+    spaceport: { name: 'Kòsmòdróm', desc: 'Kòlonizacjô kòsmòsu' },
+  },
+};
+
+export interface Translations {
+  ecosystemSubtitle: string;
+  publicBeta: string;
+  developedBy: string;
+  splashContinue: string;
+  gameModeLabel: string;
+  playerModeLabel: string;
+  botModeLabel: string;
+  botModeDesc: string;
+  botModeBanner: string;
+  speedPaused: string;
+  speed1x: string;
+  speed2x: string;
+  speed3x: string;
+  speed5x: string;
+  startGame: string;
+  loadGame: string;
+  scenarioEditorBtn: string;
+  settings: string;
+  tutorial: string;
+  accountBtn: string;
+  playAsGuest: string;
+  selectScenario: string;
+  selectDifficulty: string;
+  selectCountry: string;
+  searchCountry: string;
+  yourCountry: string;
+  treasury: string;
+  perTurn: string;
+  army: string;
+  manpowerLabel: string;
+  research: string;
+  stability: string;
+  population: string;
+  turn: string;
+  movementPts: string;
+  diplomacyPts: string;
+  techTreeBtn: string;
+  spaceOceanBtn: string;
+  councilMarketBtn: string;
+  advisorTitle: string;
+  advisorLabel: string;
+  advisorOn: string;
+  advisorOff: string;
+  allies: string;
+  noAllies: string;
+  topCountries: string;
+  selectedCountry: string;
+  areaLabel: string;
+  yourArmy: string;
+  enemyArmy: string;
+  exactArmyTotal: string;
+  tacticalWarningStronger: string;
+  tacticalBalanced: string;
+  tacticalAdvantage: string;
+  declareWar: string;
+  proposeAlliance: string;
+  proposeNap: string;
+  proposeAccess: string;
+  sendUltimatum: string;
+  proposeVassal: string;
+  sendSpy: string;
+  blackOpsLabel: string;
+  sabotageOp: string;
+  rebelsOp: string;
+  stealTechOp: string;
+  strategicStrikeOp: string;
+  nuclearStrikeOp: string;
+  sendAid25: string;
+  sendAid50: string;
+  proposePeace: string;
+  atWarBadge: string;
+  allyBadge: string;
+  truceBadge: string;
+  napBadge: string;
+  accessBadge: string;
+  vassalBadge: string;
+  diplomacyTab: string;
+  encyclopediaTab: string;
+  capitalLabel: string;
+  capitalPrefix: string;
+  governmentLabel: string;
+  curiositiesLabel: string;
+  provincePanel: string;
+  buildingsTab: string;
+  recruitTab: string;
+  marchTab: string;
+  techTab: string;
+  arsenalTab: string;
+  build: string;
+  built: string;
+  recruit: string;
+  recruit10k: string;
+  recruitMax: string;
+  assimilateBtn: string;
+  assimilatedBadge: string;
+  unassimilatedWarn: string;
+  winChanceLabel: string;
+  selectTargetProvince: string;
+  seaLandingTag: string;
+  armySplit: string;
+  issueOrder: string;
+  queuedOrders: string;
+  cancelOrder: string;
+  treasuryModalTitle: string;
+  budgetRevenues: string;
+  budgetExpenses: string;
+  taxIncomeLabel: string;
+  factoryPortIncomeLabel: string;
+  tradeIncomeLabel: string;
+  vassalIncomeLabel: string;
+  spaceIncomeLabel: string;
+  armyUpkeepLabel: string;
+  buildingUpkeepLabel: string;
+  loanPaymentsLabel: string;
+  vassalPaidLabel: string;
+  netBalanceLabel: string;
+  taxRateLabel: string;
+  taxWarningHigh: string;
+  taxBonusLow: string;
+  stateBankTitle: string;
+  takeLoan60: string;
+  takeLoan150: string;
+  repayLoan: string;
+  noLoans: string;
+  leaderboardBtn: string;
+  leaderboardTitle: string;
+  powersTab: string;
+  chronicleTab: string;
+  hallOfFameTab: string;
+  timelapseTab: string;
+  sortPower: string;
+  sortArea: string;
+  sortArmy: string;
+  sortTreasury: string;
+  noChronicle: string;
+  noHallOfFame: string;
+  randomEventPrompt: string;
+  accountTitle: string;
+  loginTab: string;
+  registerTab: string;
+  profileTab: string;
+  nickname: string;
+  emailOptional: string;
+  chooseAvatar: string;
+  securityMethodPrompt: string;
+  passwordMethod: string;
+  pinMethod: string;
+  passwordLabel: string;
+  pinLabel: string;
+  pinLengthHint: string;
+  createAccount: string;
+  loginAccount: string;
+  logout: string;
+  exportAccount: string;
+  importAccount: string;
+  verifySecretToUnlock: string;
+  careerStats: string;
+  turnsPlayed: string;
+  warsWon: string;
+  largestTerritory: string;
+  rankLabel: string;
+  saveGame: string;
+  loadSlot: string;
+  deleteSlot: string;
+  noSaves: string;
+  saveLabelPlaceholder: string;
+  languageLabel: string;
+  performanceMode: string;
+  perfAuto: string;
+  perfUltra: string;
+  perfMedium: string;
+  perfLight: string;
+  soundLabel: string;
+  soundOn: string;
+  soundOff: string;
+  backToMenu: string;
+  close: string;
+  victoryTitle: string;
+  victorySubtitle: string;
+  defeatTitle: string;
+  defeatSubtitle: string;
+  playAgain: string;
+  tutorialTitle: string;
+  tutorialDisclaimer: string;
+  tutorialSteps: Array<{ title: string; body: string }>;
+  tutorialNext: string;
+  tutorialPrev: string;
+  tutorialFinish: string;
+  pauseNotificationHint: string;
+  researchMilitary: string;
+  researchEconomy: string;
+  researchLogistics: string;
+  upgradeTech: string;
+  uiModeLabel: string;
+  uiVeryEasy: string;
+  uiEasy: string;
+  uiHard: string;
+  battlesLabel: string;
+  cityReconBtn: string;
+  grandStrategistMedalTitle: string;
+  grandStrategistMedalDesc: string;
+  timelapseReplayLabel: string;
+  liveBattleLogLabel: string;
+  noBattlesYet: string;
+  guidedRecruitTip: string;
+  guidedAttackTip: string;
+}
+
+export const TRANSLATIONS: Record<Language, Translations> = {
+  en: {
+    ecosystemSubtitle: 'Blocks™ Ecosystem • Official Software',
+    publicBeta: 'VERSION 1.0 · FULL RELEASE',
+    developedBy: 'Developed by Blocks™ (Mateusz Bednorz) • Copyright © 2026 Blocks™. All rights reserved.',
+    splashContinue: 'Click or press Enter to continue',
+    gameModeLabel: 'Game Mode',
+    playerModeLabel: 'Player Campaign',
+    botModeLabel: 'Bot Mode (AI Simulation)',
+    botModeDesc: 'Every world nation is commanded by honest AI — watch empires clash in real time.',
+    botModeBanner: 'BOT MODE: Watch autonomous AI nations wage wars, sign treaties, and expand live.',
+    speedPaused: 'Pause',
+    speed1x: '1x',
+    speed2x: '2x',
+    speed3x: '3x',
+    speed5x: '5x',
+    startGame: 'Launch Campaign',
+    loadGame: 'Load Game',
+    scenarioEditorBtn: 'Scenario Editor',
+    settings: 'Settings',
+    tutorial: 'Tutorial',
+    accountBtn: 'Blocks™ Account',
+    playAsGuest: 'Play as Guest',
+    selectScenario: 'Select Historical Scenario',
+    selectDifficulty: 'Difficulty Level',
+    selectCountry: 'Select Starting Nation',
+    searchCountry: 'Search nation...',
+    yourCountry: 'Your nation',
+    treasury: 'Treasury',
+    perTurn: 'mo',
+    army: 'Army',
+    manpowerLabel: 'Manpower',
+    research: 'Research',
+    stability: 'Stability',
+    population: 'Population',
+    turn: 'Month',
+    movementPts: 'MP',
+    diplomacyPts: 'DP',
+    techTreeBtn: 'Tech Tree',
+    spaceOceanBtn: 'Space & Ocean',
+    councilMarketBtn: 'Council & Market',
+    advisorTitle: 'Blocks™ Tactical AI',
+    advisorLabel: 'Tactical AI Advisor',
+    advisorOn: 'Enabled',
+    advisorOff: 'Disabled',
+    allies: 'Allies',
+    noAllies: 'No active alliances',
+    topCountries: 'World Powers',
+    selectedCountry: 'Selected Nation',
+    areaLabel: 'Territory',
+    yourArmy: 'Your army',
+    enemyArmy: 'Total nation army',
+    exactArmyTotal: 'Sum across provinces & marches',
+    tacticalWarningStronger: 'Tactical warning: Target holds numerical superiority! Mobilize or secure allies before attacking.',
+    tacticalBalanced: 'Forces are evenly matched. Leverage weather, forts, and unit composition.',
+    tacticalAdvantage: 'You hold a decisive military advantage over this nation.',
+    declareWar: 'Declare War',
+    proposeAlliance: 'Alliance',
+    proposeNap: 'Non-Aggression',
+    proposeAccess: 'Military Access',
+    sendUltimatum: 'Ultimatum',
+    proposeVassal: 'Vassalize',
+    sendSpy: 'Deploy Spy (12 PLN)',
+    blackOpsLabel: 'Covert Black Ops',
+    sabotageOp: 'Sabotage Forts',
+    rebelsOp: 'Foment Rebels',
+    stealTechOp: 'Steal Tech (+18 RP)',
+    strategicStrikeOp: 'Ballistic Strike',
+    nuclearStrikeOp: 'Nuclear Strike',
+    sendAid25: 'Send Aid 25%',
+    sendAid50: 'Send Aid 50%',
+    proposePeace: 'Propose Peace',
+    atWarBadge: 'AT WAR',
+    allyBadge: 'ALLY',
+    truceBadge: 'TRUCE',
+    napBadge: 'NON-AGGRESSION',
+    accessBadge: 'MIL. ACCESS',
+    vassalBadge: 'YOUR VASSAL',
+    diplomacyTab: 'Diplomacy',
+    encyclopediaTab: 'Dossier & Facts',
+    capitalLabel: 'Capital',
+    capitalPrefix: 'Capital',
+    governmentLabel: 'Government',
+    curiositiesLabel: 'Historical & strategic dossier',
+    provincePanel: 'Province Command',
+    buildingsTab: 'Buildings',
+    recruitTab: 'Recruit',
+    marchTab: 'March',
+    techTab: 'Tech Tree',
+    arsenalTab: 'Arsenal',
+    build: 'Build',
+    built: 'Built',
+    recruit: 'Recruit',
+    recruit10k: '+10,000',
+    recruitMax: 'Max',
+    assimilateBtn: 'Assimilate Province (10 PLN)',
+    assimilatedBadge: 'Assimilated',
+    unassimilatedWarn: 'Unassimilated (-25% income & defense)',
+    winChanceLabel: 'Pre-War Battle Odds',
+    selectTargetProvince: 'Choose destination province (land or sea lane)',
+    seaLandingTag: 'Naval Landing',
+    armySplit: 'Force Split',
+    issueOrder: 'Launch Real-Time March',
+    queuedOrders: 'Active Marches',
+    cancelOrder: 'Recall',
+    treasuryModalTitle: 'Treasury, Taxes & State Bank',
+    budgetRevenues: 'Monthly Revenues',
+    budgetExpenses: 'Monthly Expenses',
+    taxIncomeLabel: 'Citizen Taxes',
+    factoryPortIncomeLabel: 'Factories, Ports & Farms',
+    tradeIncomeLabel: 'Trade & Infrastructure',
+    vassalIncomeLabel: 'Vassal Tribute',
+    spaceIncomeLabel: 'Space, Ocean & Megaprojects',
+    armyUpkeepLabel: 'Army Upkeep',
+    buildingUpkeepLabel: 'Building Upkeep',
+    loanPaymentsLabel: 'Bank Loan Installments',
+    vassalPaidLabel: 'Tribute Paid',
+    netBalanceLabel: 'Net Balance / Month',
+    taxRateLabel: 'Tax Rate',
+    taxWarningHigh: 'High taxes (>25%) erode national stability!',
+    taxBonusLow: 'Low taxes (<=14%) boost stability and public support.',
+    stateBankTitle: 'State Bank (Loans)',
+    takeLoan60: 'Loan +60 PLN (10 mo)',
+    takeLoan150: 'Loan +150 PLN (10 mo)',
+    repayLoan: 'Repay Early',
+    noLoans: 'No active bank loans.',
+    leaderboardBtn: 'Ranking & Chronicle',
+    leaderboardTitle: 'World Powers, War Chronicle, Timelapse & Hall of Fame',
+    powersTab: 'World Powers',
+    chronicleTab: 'War Chronicle',
+    hallOfFameTab: 'Blocks™ Hall of Fame',
+    timelapseTab: 'Timelapse Replay',
+    sortPower: 'Power',
+    sortArea: 'Territory',
+    sortArmy: 'Army',
+    sortTreasury: 'Treasury',
+    noChronicle: 'No chronicle entries yet — unpause the clock to make history.',
+    noHallOfFame: 'No recorded Blocks™ Account milestones yet.',
+    randomEventPrompt: 'Strategic Event — Choose Response',
+    accountTitle: 'Blocks™ Account',
+    loginTab: 'Sign In',
+    registerTab: 'Create Account',
+    profileTab: 'Profile & Transfer',
+    nickname: 'Commander Nickname',
+    emailOptional: 'E-mail (optional)',
+    chooseAvatar: 'Select Avatar Emblem',
+    securityMethodPrompt: 'Choose how to secure your account:',
+    passwordMethod: 'Password',
+    pinMethod: 'PIN Code',
+    passwordLabel: 'Your text password',
+    pinLabel: 'PIN Code (4 or 6 digits)',
+    pinLengthHint: 'Use the numeric pad or keys 0–9',
+    createAccount: 'Create Blocks™ Account',
+    loginAccount: 'Sign In',
+    logout: 'Sign Out',
+    exportAccount: 'Export Blocks Account',
+    importAccount: 'Import Account',
+    verifySecretToUnlock: 'Enter your Password or PIN to unlock transfer:',
+    careerStats: 'Blocks™ Career Statistics',
+    turnsPlayed: 'Months played',
+    warsWon: 'Wars won',
+    largestTerritory: 'Largest territory',
+    rankLabel: 'Blocks™ Rank',
+    saveGame: 'Save Campaign',
+    loadSlot: 'Load',
+    deleteSlot: 'Delete',
+    noSaves: 'No saved campaigns for this account.',
+    saveLabelPlaceholder: 'Save name (e.g. Poland 2026)',
+    languageLabel: 'Game Language',
+    performanceMode: 'Performance Mode (Liquid Glass & Weather)',
+    perfAuto: 'Auto (Hardware Detect)',
+    perfUltra: 'Ultra Mode (Full Liquid Glass & Weather)',
+    perfMedium: 'Medium Mode (Balanced)',
+    perfLight: 'Light Mode (Max 60 FPS)',
+    soundLabel: 'Battle & UI Audio (45% Limiter)',
+    soundOn: 'Enabled',
+    soundOff: 'Muted',
+    backToMenu: 'Main Menu',
+    close: 'Close',
+    victoryTitle: 'STRATEGIC VICTORY!',
+    victorySubtitle: 'A dominant superpower has achieved global & orbital supremacy.',
+    defeatTitle: 'NATION DEFEATED',
+    defeatSubtitle: 'All of your provinces have fallen to rival powers.',
+    playAgain: 'New Campaign',
+    tutorialTitle: 'Commander Tutorial — Global Strategy: APEX EDITION (v1.0)',
+    tutorialDisclaimer: 'Notice: All PLN values shown in the treasury, budget, and global market are purely fictional virtual game currency and are not real money.',
+    tutorialSteps: [
+      {
+        title: '1. Real-Time Simulation & Active Pause (1x–5x)',
+        body: 'Global Strategy: APEX EDITION runs in continuous real time with Active Pause (Spacebar). Plan troop marches, diplomacy, and research while paused, then run 1x, 2x, 3x, or 5x speed.',
+      },
+      {
+        title: '2. Interactive Visual Tech Tree',
+        body: 'Open the Tech Tree from the top bar to plan multi-tier paths across Military, Economic, and Logistics branches—unlocking Missile Silos, Orbital Shields, Thermonuclear Warheads, and Spaceflight.',
+      },
+      {
+        title: '3. 16 Polish Voivodeships, City Recon & Water Alerts',
+        body: 'Zoom into Poland or the world to click major city pins for free Satellite Recon & Street View, command 16 Polish voivodeships, and monitor Maritime Water Alerts.',
+      },
+      {
+        title: '4. Space & Ocean Agency + Council & Market',
+        body: 'Expand beyond Earth Orbit to the Moon, Mars, Asteroid Belt, Jupiter, and Deep Ocean & Europa bases while appointing Cabinet Ministers and trading on the Global Market.',
+      },
+    ],
+    tutorialNext: 'Next',
+    tutorialPrev: 'Back',
+    tutorialFinish: 'Begin Command',
+    pauseNotificationHint: 'Hover to pause timer',
+    researchMilitary: 'Military Doctrine (+8% strength)',
+    researchEconomy: 'Industrial Economy (+10% income)',
+    researchLogistics: 'Logistics (+1 MP, -8% unit cost)',
+    upgradeTech: 'Upgrade (25 RP)',
+    uiModeLabel: 'Visual Interface Mode',
+    uiVeryEasy: '🟢 Very Easy UI',
+    uiEasy: '🔵 Easy UI',
+    uiHard: '🔴 Hard / Pro UI',
+    battlesLabel: 'Battles',
+    cityReconBtn: 'City Recon',
+    grandStrategistMedalTitle: 'Honorary Grand Strategist Medal',
+    grandStrategistMedalDesc: 'Awarded for Unmatched Tactical Genius!',
+    timelapseReplayLabel: 'Campaign Timelapse Replay',
+    liveBattleLogLabel: 'Live Battle Log',
+    noBattlesYet: 'No clashes recorded yet — launch an offensive to log combat telemetry.',
+    guidedRecruitTip: '➕ Recruit Soldiers',
+    guidedAttackTip: '⚔️ Click Red Enemy Province to Attack',
+  },
+  pl: {
+    ecosystemSubtitle: 'Blocks™ Ecosystem • Official Software',
+    publicBeta: 'WERSJA 1.0 · PEŁNE WYDANIE',
+    developedBy: 'Developed by Blocks™ (Mateusz Bednorz) • Copyright © 2026 Blocks™. All rights reserved.',
+    splashContinue: 'Kliknij lub naciśnij Enter, aby wejść',
+    gameModeLabel: 'Tryb Rozgrywki',
+    playerModeLabel: 'Kampania Gracza',
+    botModeLabel: 'Tryb Botów (Symulacja AI)',
+    botModeDesc: 'Wszystkimi państwami na świecie steruje uczciwe AI — obserwuj wojny i sojusze w czasie rzeczywistym.',
+    botModeBanner: 'TRYB BOTÓW: Oglądaj na żywo, jak autonomiczne państwa AI prowadzą wojny i dyplomację.',
+    speedPaused: 'Pauza',
+    speed1x: '1x',
+    speed2x: '2x',
+    speed3x: '3x',
+    speed5x: '5x',
+    startGame: 'Rozpocznij Kampanię',
+    loadGame: 'Wczytaj Grę',
+    scenarioEditorBtn: 'Edytor Scenariusza',
+    settings: 'Ustawienia',
+    tutorial: 'Samouczek',
+    accountBtn: 'Konto Blocks™',
+    playAsGuest: 'Graj jako Gość',
+    selectScenario: 'Wybierz Scenariusz Historyczny',
+    selectDifficulty: 'Poziom Trudności',
+    selectCountry: 'Wybierz Państwo Startowe',
+    searchCountry: 'Szukaj państwa...',
+    yourCountry: 'Twój kraj',
+    treasury: 'Skarbiec',
+    perTurn: 'm-c',
+    army: 'Armia',
+    manpowerLabel: 'Zasoby Ludzkie',
+    research: 'Badania',
+    stability: 'Stabilność',
+    population: 'Populacja',
+    turn: 'Miesiąc',
+    movementPts: 'PR',
+    diplomacyPts: 'PD',
+    techTreeBtn: 'Drzewko Tech.',
+    spaceOceanBtn: 'Kosmos i Ocean',
+    councilMarketBtn: 'Rada i Rynek',
+    advisorTitle: 'Blocks™ Doradca AI',
+    advisorLabel: 'Taktyczny Doradca AI',
+    advisorOn: 'Włączony',
+    advisorOff: 'Wyłączony',
+    allies: 'Sojusznicy',
+    noAllies: 'Brak aktywnych sojuszy',
+    topCountries: 'Mocarstwa Świata',
+    selectedCountry: 'Wybrane Państwo',
+    areaLabel: 'Powierzchnia',
+    yourArmy: 'Twoja armia',
+    enemyArmy: 'Całkowita armia państwa',
+    exactArmyTotal: 'Suma w prowincjach i marszu',
+    tacticalWarningStronger: 'Uwaga taktyczna: Przeciwnik ma przewagę liczebną! Zrekrutuj wojsko lub zawrzyj sojusz.',
+    tacticalBalanced: 'Siły są wyrównane. Wykorzystaj pogodę, fortyfikacje i wsparcie floty.',
+    tacticalAdvantage: 'Masz wyraźną przewagę militarną nad tym państwem.',
+    declareWar: 'Wypowiedz wojnę',
+    proposeAlliance: 'Sojusz',
+    proposeNap: 'Pakt o nieagresji',
+    proposeAccess: 'Dostęp wojskowy',
+    sendUltimatum: 'Ultimatum',
+    proposeVassal: 'Wasalizuj',
+    sendSpy: 'Wyślij Szpiega (12 PLN)',
+    blackOpsLabel: 'Operacje Specjalne (Black Ops)',
+    sabotageOp: 'Sabotaż Fortów',
+    rebelsOp: 'Bunt Ludności',
+    stealTechOp: 'Kradzież Tech. (+18 PB)',
+    strategicStrikeOp: 'Atak Rakietowy',
+    nuclearStrikeOp: 'Uderzenie Jądrowe',
+    sendAid25: 'Wsparcie 25%',
+    sendAid50: 'Wsparcie 50%',
+    proposePeace: 'Zaproponuj pokój',
+    atWarBadge: 'STAN WOJNY',
+    allyBadge: 'SOJUSZNIK',
+    truceBadge: 'ROZEJM',
+    napBadge: 'PAKT NIEAGRESJI',
+    accessBadge: 'DOSTĘP WOJSK.',
+    vassalBadge: 'TWÓJ WASAL',
+    diplomacyTab: 'Dyplomacja',
+    encyclopediaTab: 'Info i Ciekawostki',
+    capitalLabel: 'Stolica',
+    capitalPrefix: 'Stolica',
+    governmentLabel: 'Ustrój',
+    curiositiesLabel: 'Ciekawostki strategiczne i historyczne',
+    provincePanel: 'Zarządzanie Prowincją',
+    buildingsTab: 'Budynki',
+    recruitTab: 'Rekrutacja',
+    marchTab: 'Marsz',
+    techTab: 'Badania',
+    arsenalTab: 'Arsenał',
+    build: 'Zbuduj',
+    built: 'Zbudowano',
+    recruit: 'Rekrutuj',
+    recruit10k: '+10 000',
+    recruitMax: 'Maks.',
+    assimilateBtn: 'Asymiluj prowincję (10 PLN)',
+    assimilatedBadge: 'Zasymilowana',
+    unassimilatedWarn: 'Niestabilna (-25% dochodu i obrony)',
+    winChanceLabel: 'Kalkulator szansy przed atakiem',
+    selectTargetProvince: 'Wybierz prowincję docelową (ląd lub desant morski)',
+    seaLandingTag: 'Desant Morski',
+    armySplit: 'Podział oddziału',
+    issueOrder: 'Rozpocznij Marsz na Żywo',
+    queuedOrders: 'Aktywne marsze',
+    cancelOrder: 'Zawróć',
+    treasuryModalTitle: 'Skarbiec, Podatki i Bank Państwowy',
+    budgetRevenues: 'Przychody miesięczne',
+    budgetExpenses: 'Wydatki miesięczne',
+    taxIncomeLabel: 'Podatki obywatelskie',
+    factoryPortIncomeLabel: 'Fabryki, Porty i Farmy',
+    tradeIncomeLabel: 'Handel i infrastruktura',
+    vassalIncomeLabel: 'Danina od wasali',
+    spaceIncomeLabel: 'Kosmos, Ocean i Megaprojekty',
+    armyUpkeepLabel: 'Utrzymanie armii',
+    buildingUpkeepLabel: 'Utrzymanie budynków',
+    loanPaymentsLabel: 'Raty kredytów',
+    vassalPaidLabel: 'Trybut lenny',
+    netBalanceLabel: 'Bilans netto / m-c',
+    taxRateLabel: 'Stawka podatkowa',
+    taxWarningHigh: 'Wysokie podatki (>25%) obniżają stabilność państwa!',
+    taxBonusLow: 'Niskie podatki (<=14%) wzmacniają poparcie i stabilność.',
+    stateBankTitle: 'Bank Państwowy (Pożyczki)',
+    takeLoan60: 'Pożyczka +60 PLN (10 m-cy)',
+    takeLoan150: 'Pożyczka +150 PLN (10 m-cy)',
+    repayLoan: 'Spłać wcześniej',
+    noLoans: 'Brak aktywnych pożyczek bankowych.',
+    leaderboardBtn: 'Ranking & Kronika',
+    leaderboardTitle: 'Ranking Światowy, Kronika, Timelapse i Galeria Sław',
+    powersTab: 'Mocarstwa Świata',
+    chronicleTab: 'Kronika Wojny',
+    hallOfFameTab: 'Galeria Sław Blocks™',
+    timelapseTab: 'Powtórka Timelapse',
+    sortPower: 'Potęga',
+    sortArea: 'Terytorium',
+    sortArmy: 'Armia',
+    sortTreasury: 'Skarbiec',
+    noChronicle: 'Brak wpisów w Kronice — odblokuj pauzę czasu, aby ruszyć kampanię.',
+    noHallOfFame: 'Brak zapisanych rekordów Kont Blocks™.',
+    randomEventPrompt: 'Wydarzenie Strategiczne — Wybierz Decyzję',
+    accountTitle: 'Konto Blocks™',
+    loginTab: 'Logowanie',
+    registerTab: 'Nowe Konto',
+    profileTab: 'Profil & Transfer',
+    nickname: 'Nick gracza',
+    emailOptional: 'E-mail (opcjonalny)',
+    chooseAvatar: 'Wybierz ikonę awatara',
+    securityMethodPrompt: 'Wybierz, w jaki sposób chcesz zabezpieczyć swoje konto:',
+    passwordMethod: 'Hasło',
+    pinMethod: 'Kod PIN',
+    passwordLabel: 'Twoje hasło tekstowe',
+    pinLabel: 'Kod PIN (4 lub 6 cyfr)',
+    pinLengthHint: 'Użyj klawiatury numerycznej lub klawiszy 0–9',
+    createAccount: 'Utwórz Konto Blocks™',
+    loginAccount: 'Zaloguj się',
+    logout: 'Wyloguj',
+    exportAccount: 'Eksportuj Konto Blocks',
+    importAccount: 'Wczytaj Konto',
+    verifySecretToUnlock: 'Wpisz swoje Hasło lub Kod PIN, aby odblokować transfer:',
+    careerStats: 'Statystyki Ekosystemu Blocks™',
+    turnsPlayed: 'Rozegrane miesiące',
+    warsWon: 'Wygrane wojny',
+    largestTerritory: 'Największe terytorium',
+    rankLabel: 'Ranga Blocks™',
+    saveGame: 'Zapisz Kampanię',
+    loadSlot: 'Wczytaj',
+    deleteSlot: 'Usuń',
+    noSaves: 'Brak zapisanych gier dla tego konta.',
+    saveLabelPlaceholder: 'Nazwa zapisu (np. Polska 2026)',
+    languageLabel: 'Język gry',
+    performanceMode: 'Tryb wydajności (Liquid Glass & Pogoda)',
+    perfAuto: 'Auto (Wykryj sprzęt)',
+    perfUltra: 'Tryb Ultra (Pełne Liquid Glass i Pogoda)',
+    perfMedium: 'Tryb Średni (Zbalansowany)',
+    perfLight: 'Tryb Lekki (Maks. 60 FPS)',
+    soundLabel: 'Dźwięk i efekty bitwy (Limiter 45%)',
+    soundOn: 'Włączony',
+    soundOff: 'Wyciszony',
+    backToMenu: 'Menu Główne',
+    close: 'Zamknij',
+    victoryTitle: 'ZWYCIĘSTWO STRATEGICZNE!',
+    victorySubtitle: 'Dominująca potęga przejęła kontrolę nad Ziemią i orbitą.',
+    defeatTitle: 'PAŃSTWO ZOSTAŁO PODBITĘ',
+    defeatSubtitle: 'Utraciłeś wszystkie swoje prowincje na rzecz wrogich mocarstw.',
+    playAgain: 'Nowa Kampania',
+    tutorialTitle: 'Samouczek Dowódcy — Global Strategy: APEX EDITION (v1.0)',
+    tutorialDisclaimer: 'Informacja: Wszystkie złote (PLN) widoczne w skarbcu, budżecie i na rynku światowym są wyłącznie fikcyjną walutą wirtualną służącą do rozgrywki i nie są prawdziwymi pieniędzmi.',
+    tutorialSteps: [
+      {
+        title: '1. Czas Rzeczywisty i Aktywna Pauza (1x–5x)',
+        body: 'Global Strategy działa w płynnym czasie rzeczywistym z Aktywną Pauzą (Spacja). Wydawaj rozkazy podczas pauzy, a potem przyspiesz czas 1x, 2x, 3x lub 5x.',
+      },
+      {
+        title: '2. Interaktywne Drzewko Technologii',
+        body: 'Otwórz Drzewko Technologii z górnego paska, by planować ścieżki badań (Wojsko, Ekonomia, Logistyka) i odblokować Silosy Rakietowe, Tarcze Orbitalne oraz Loty Kosmiczne.',
+      },
+      {
+        title: '3. 16 Województw Polski, Podgląd Miast i Alerty Wodne',
+        body: 'Przybliż mapę Polski lub świata i klikaj znaczniki miast, aby otworzyć darmowy podgląd satelitarny i Street View. Dowódź 16 województwami i śledź Alerty Wodne.',
+      },
+      {
+        title: '4. Agencja Kosmosu i Oceanów + Rada Świata',
+        body: 'Kolonizuj Księżyc, Marsa, Pas Asteroid, Jowisza i Bazy Głębinowe (Europa), powołuj Ministrów i handluj na Rynku Światowym.',
+      },
+    ],
+    tutorialNext: 'Dalej',
+    tutorialPrev: 'Wstecz',
+    tutorialFinish: 'Rozpocznij Dowodzenie',
+    pauseNotificationHint: 'Najedź myszką, aby zatrzymać',
+    researchMilitary: 'Doktryna Wojskowa (+8% siły)',
+    researchEconomy: 'Ekonomia Przemysłowa (+10% dochodu)',
+    researchLogistics: 'Logistyka (+1 PR, -8% koszt wojsk)',
+    upgradeTech: 'Ulepsz (25 PB)',
+    uiModeLabel: 'Tryb Interfejsu',
+    uiVeryEasy: '🟢 B. Łatwy UI',
+    uiEasy: '🔵 Łatwy UI',
+    uiHard: '🔴 Trudny / Pro UI',
+    battlesLabel: 'Bitwy',
+    cityReconBtn: 'Zwiad Miasta',
+    grandStrategistMedalTitle: 'Honorowy Medal Wielkiego Stratega',
+    grandStrategistMedalDesc: 'Przyznany za niezrównany geniusz taktyczny!',
+    timelapseReplayLabel: 'Powtórka Timelapse Kampanii',
+    liveBattleLogLabel: 'Dziennik Bitew na Żywo',
+    noBattlesYet: 'Brak zarejestrowanych starć — rozpocznij ofensywę, aby zobaczyć logi.',
+    guidedRecruitTip: '➕ Rekrutuj Żołnierzy',
+    guidedAttackTip: '⚔️ Kliknij Czerwoną Prowincję Wroga, aby Zaatakować',
+  },
+  szl: {
+    ecosystemSubtitle: 'Blocks™ Ecosystem • Official Software',
+    publicBeta: 'WERSYJO 1.0 · PEŁNE WYDANIE',
+    developedBy: 'Developed by Blocks™ (Mateusz Bednorz) • Copyright © 2026 Blocks™. All rights reserved.',
+    splashContinue: 'Kliknij abo naćiś Enter, coby wlyźć',
+    gameModeLabel: 'Tryb Gry',
+    playerModeLabel: 'Kampanijo Gracza',
+    botModeLabel: 'Tryb Botōw (Symulacyjo AI)',
+    botModeDesc: 'Wszyjske państwa grajōm same na żywo — ôglōndej wojny i sojusze.',
+    botModeBanner: 'TRYB BOTŌW: Ôglōndej, jak boty (AI) grajōm same ze sobōm na mapie świata.',
+    speedPaused: 'Pauza',
+    speed1x: '1x',
+    speed2x: '2x',
+    speed3x: '3x',
+    speed5x: '5x',
+    startGame: 'Zacznij Kampanijo',
+    loadGame: 'Wczytej Gra',
+    scenarioEditorBtn: 'Edytor Scynariusza',
+    settings: 'Sztelōnki',
+    tutorial: 'Samōuczek',
+    accountBtn: 'Kōnto Blocks™',
+    playAsGuest: 'Grej jako Gość',
+    selectScenario: 'Wybier Scynariusz Historyczny',
+    selectDifficulty: 'Poziōm Trudności',
+    selectCountry: 'Wybier Państwo Startowe',
+    searchCountry: 'Szukej państwa...',
+    yourCountry: 'Twōj kraj',
+    treasury: 'Skarbnik',
+    perTurn: 'm-c',
+    army: 'Armijo',
+    manpowerLabel: 'Rezerwy Ludzi',
+    research: 'Badania',
+    stability: 'Stabilność',
+    population: 'Ludność',
+    turn: 'Miesiōnc',
+    movementPts: 'PR',
+    diplomacyPts: 'PD',
+    techTreeBtn: 'Drzewko Tech.',
+    spaceOceanBtn: 'Kosmos i Ocean',
+    councilMarketBtn: 'Rada i Rynek',
+    advisorTitle: 'Blocks™ Doradca AI',
+    advisorLabel: 'Doradca Taktyczny AI',
+    advisorOn: 'Załōnczōny',
+    advisorOff: 'Wyłōnczōny',
+    allies: 'Kamraty (Sojusz)',
+    noAllies: 'Żodnych sojuszy',
+    topCountries: 'Ranking Mocarstw',
+    selectedCountry: 'Wybrane Państwo',
+    areaLabel: 'Plac',
+    yourArmy: 'Twoja armijo',
+    enemyArmy: 'Całkowito armijo państwa',
+    exactArmyTotal: 'Razym we prowincyjach i marszu',
+    tacticalWarningStronger: 'Dej pozōr: Przeciwnik mo wyncyj wojska!',
+    tacticalBalanced: 'Siyły sōm rōwne. Postow forty a bacz na pogoda.',
+    tacticalAdvantage: 'Mosz srogo przewoga nad tym państwym.',
+    declareWar: 'Wypowiedz wojna',
+    proposeAlliance: 'Sojusz',
+    proposeNap: 'Pakt ô nieagresyji',
+    proposeAccess: 'Dostymp wojskowy',
+    sendUltimatum: 'Ultimatum',
+    proposeVassal: 'Wasalizuj',
+    sendSpy: 'Wyślij Szpiega (12 PLN)',
+    blackOpsLabel: 'Tajne Akcyje (Black Ops)',
+    sabotageOp: 'Sabotaż Fortōw',
+    rebelsOp: 'Bunt',
+    stealTechOp: 'Kradzież Tech. (+18 PB)',
+    strategicStrikeOp: 'Atak Rakietowy',
+    nuclearStrikeOp: 'Atak Jōndrowy',
+    sendAid25: 'Wsparcie 25%',
+    sendAid50: 'Wsparcie 50%',
+    proposePeace: 'Zaproponuj pokōj',
+    atWarBadge: 'WOJNA',
+    allyBadge: 'SOJUSZ',
+    truceBadge: 'ROZEJM',
+    napBadge: 'PAKT NIEAGRESYJI',
+    accessBadge: 'DOSTYMP WOJSK.',
+    vassalBadge: 'TWŌJ WASAL',
+    diplomacyTab: 'Dyplomacyjo',
+    encyclopediaTab: 'Informacyje',
+    capitalLabel: 'Stolica',
+    capitalPrefix: 'Stolica',
+    governmentLabel: 'Ustrōj',
+    curiositiesLabel: 'Ciekawostki ô państwie',
+    provincePanel: 'Rządzynie Prowincyjo',
+    buildingsTab: 'Budynki',
+    recruitTab: 'Werbōnek',
+    marchTab: 'Marsz',
+    techTab: 'Tech.',
+    arsenalTab: 'Arsenał',
+    build: 'Postow',
+    built: 'Stoji',
+    recruit: 'Werbuj',
+    recruit10k: '+10 000',
+    recruitMax: 'Maks.',
+    assimilateBtn: 'Asymiluj prowincyjo (10 PLN)',
+    assimilatedBadge: 'Zasymilowano',
+    unassimilatedWarn: 'Niespokojno (-25% dochodu i ôbrōny)',
+    winChanceLabel: 'Szansa na wygrano',
+    selectTargetProvince: 'Wybier prowincyjo docelowo',
+    seaLandingTag: 'Desant Morski',
+    armySplit: 'Podzioł ôddziału',
+    issueOrder: 'Wyznacz Marsz na Żywo',
+    queuedOrders: 'Aktywne marsze',
+    cancelOrder: 'Cōfnij',
+    treasuryModalTitle: 'Skarbnik, Podatki i Bank',
+    budgetRevenues: 'Przychody na miesiōnc',
+    budgetExpenses: 'Wydatki na miesiōnc',
+    taxIncomeLabel: 'Podatki ôbywatelske',
+    factoryPortIncomeLabel: 'Fabryki, Porty i Farmy',
+    tradeIncomeLabel: 'Handel i drogi',
+    vassalIncomeLabel: 'Danina ôd wasali',
+    spaceIncomeLabel: 'Kosmos i Megaprojekty',
+    armyUpkeepLabel: 'Utrzymanie wojska',
+    buildingUpkeepLabel: 'Utrzymanie budynkōw',
+    loanPaymentsLabel: 'Raty kredytōw',
+    vassalPaidLabel: 'Trybut lenny',
+    netBalanceLabel: 'Bilans netto / m-c',
+    taxRateLabel: 'Stawka podatkowo',
+    taxWarningHigh: 'Sroge podatki (>25%) psujōm stabilność!',
+    taxBonusLow: 'Niske podatki (<=14%) poprawiajōm stabilność.',
+    stateBankTitle: 'Bank Państwowy (Pożyczki)',
+    takeLoan60: 'Pożyczka +60 PLN (10 m-cy)',
+    takeLoan150: 'Pożyczka +150 PLN (10 m-cy)',
+    repayLoan: 'Spłać teroz',
+    noLoans: 'Żodnych pożyczek.',
+    leaderboardBtn: 'Ranking & Krōnika',
+    leaderboardTitle: 'Ranking Świata, Krōnika, Timelapse i Galeryjo Sław',
+    powersTab: 'Mocarstwa Świata',
+    chronicleTab: 'Krōnika Wojny',
+    hallOfFameTab: 'Galeryjo Sław Blocks™',
+    timelapseTab: 'Timelapse',
+    sortPower: 'Siyła',
+    sortArea: 'Plac',
+    sortArmy: 'Armijo',
+    sortTreasury: 'Skarbnik',
+    noChronicle: 'Żodnych wpisōw w Krōnice.',
+    noHallOfFame: 'Żodnych rekordōw Kont Blocks™.',
+    randomEventPrompt: 'Wydarzynie Strategiczne',
+    accountTitle: 'Kōnto Blocks™',
+    loginTab: 'Logowanie',
+    registerTab: 'Nowe Kōnto',
+    profileTab: 'Profil & Transfer',
+    nickname: 'Nick gracza',
+    emailOptional: 'E-mail (nieobowiązkowy)',
+    chooseAvatar: 'Wybier ikōna awatara',
+    securityMethodPrompt: 'Wybier, jak chcesz zabezpieczyć swoje kōnto:',
+    passwordMethod: 'Hasło',
+    pinMethod: 'Kod PIN',
+    passwordLabel: 'Twoje hasło tekstowe',
+    pinLabel: 'Kod PIN (4 abo 6 cyfer)',
+    pinLengthHint: 'Użyj klawiatury numerycznej abo 0–9',
+    createAccount: 'Zrób Kōnto Blocks™',
+    loginAccount: 'Zaloguj sie',
+    logout: 'Wyloguj',
+    exportAccount: 'Eksportuj Kōnto Blocks',
+    importAccount: 'Wczytej Kōnto',
+    verifySecretToUnlock: 'Wpisz Hasło abo Kod PIN, coby ôdblokować:',
+    careerStats: 'Statystyki Kōnta Blocks™',
+    turnsPlayed: 'Rozegrane miesiōnce',
+    warsWon: 'Wygrane wojny',
+    largestTerritory: 'Nojwiynkszy plac',
+    rankLabel: 'Ranga Blocks™',
+    saveGame: 'Zapisz Kampanijo',
+    loadSlot: 'Wczytej',
+    deleteSlot: 'Wyciep',
+    noSaves: 'Żodnych zapisanych gier.',
+    saveLabelPlaceholder: 'Miano zapisu (np. Polska 2026)',
+    languageLabel: 'Godka gry',
+    performanceMode: 'Tryb szwungu (Liquid Glass & Pogoda)',
+    perfAuto: 'Auto (Mōndry)',
+    perfUltra: 'Tryb Ultra (Pełno pogoda i szkło)',
+    perfMedium: 'Tryb Strzedni (Rōwny)',
+    perfLight: 'Tryb Lekki (Maks. 60 FPS)',
+    soundLabel: 'Klang a dyńki bitwy (Limiter 45%)',
+    soundOn: 'Załōnczōny',
+    soundOff: 'Wyciszōny',
+    backToMenu: 'Głōwne Menu',
+    close: 'Zawrzij',
+    victoryTitle: 'WIELGO WYGRANO!',
+    victorySubtitle: 'Twoje państwo rzōndzi na całym świecie.',
+    defeatTitle: 'PAŃSTWO PRZEGRAŁO',
+    defeatSubtitle: 'Straciyłeś wszyjske prowincyje na rzecz wrogōw.',
+    playAgain: 'Nowo Kampanijo',
+    tutorialTitle: 'Samōuczek Dowōdcy — Global Strategy: APEX EDITION (v1.0)',
+    tutorialDisclaimer: 'Informacyjo: Wszyjske złote (PLN) widoczne w skarbniku sōm ino wirtualnōm walutōm do gry i niy sōm prowdywymi piniyndzami.',
+    tutorialSteps: [
+      { title: '1. Czas Rzeczywisty i Pauza (1x–5x)', body: 'Steruj wojskym na żywo z aktywnōm pauzōm (Spacyjo).' },
+      { title: '2. Drzewko Technologii', body: 'Planuj badania wojskowe, ekōnōmiczne i kosmiczne.' },
+      { title: '3. 16 Wojewōdztw Polski i Zwiad Miast', body: 'Dowodź 16 wojewōdztwami i ôglōndej miasta na mapie.' },
+      { title: '4. Kosmos i Ocean', body: 'Kolōnizuj Ksiynżyc, Marsa, Pas Asteroid i Europa.' },
+    ],
+    tutorialNext: 'Dalij',
+    tutorialPrev: 'Nazod',
+    tutorialFinish: 'Zacznij Dowodzynie',
+    pauseNotificationHint: 'Najedź myszkōm, coby zatrzymać',
+    researchMilitary: 'Doktryna Wojskowo (+8% siyły)',
+    researchEconomy: 'Przemysł (+10% dochodu)',
+    researchLogistics: 'Logistyka (+1 PR, -8% koszt)',
+    upgradeTech: 'Ulepsz (25 PB)',
+    uiModeLabel: 'Tryb Interfejsu',
+    uiVeryEasy: '🟢 Fest Łatwy UI',
+    uiEasy: '🔵 Łatwy UI',
+    uiHard: '🔴 Pro / Weteran UI',
+    battlesLabel: 'Bitwy',
+    cityReconBtn: 'Zwiad Miasta',
+    grandStrategistMedalTitle: 'Hōnorowy Medal Wielgiego Stratega',
+    grandStrategistMedalDesc: 'Za niyzrównany gyniuz taktyczny!',
+    timelapseReplayLabel: 'Powtōrka Timelapse Kampanije',
+    liveBattleLogLabel: 'Dziynnik Bitew na Żywo',
+    noBattlesYet: 'Żodnych bitew jeszcze niy było.',
+    guidedRecruitTip: '➕ Werbuj Wojsko',
+    guidedAttackTip: '⚔️ Kliknij Czerwōno Prowincyjo Wroga, coby Atakować',
+  },
+  csb: {
+    ecosystemSubtitle: 'Blocks™ Ecosystem • Official Software',
+    publicBeta: 'WERSJÔ 1.0 · PEŁNÉ WËDANIÉ',
+    developedBy: 'Developed by Blocks™ (Mateusz Bednorz) • Copyright © 2026 Blocks™. All rights reserved.',
+    splashContinue: 'Klëkni abò wcësni Enter, żebë weńc',
+    gameModeLabel: 'Trib Grë',
+    playerModeLabel: 'Kampaniô Gracza',
+    botModeLabel: 'Trib Bòtów (Symulacjô AI)',
+    botModeDesc: 'Wszëtczima państwama rządzë autonomné AI na żëwò.',
+    botModeBanner: 'TRIB BÒTÓW: Òglądôj na żëwò, jak bòtë (AI) grają na mapie swiata.',
+    speedPaused: 'Pauza',
+    speed1x: '1x',
+    speed2x: '2x',
+    speed3x: '3x',
+    speed5x: '5x',
+    startGame: 'Rozpòczni Kampaniã',
+    loadGame: 'Wczëtôj Grã',
+    scenarioEditorBtn: 'Editora Scenariusza',
+    settings: 'Nastôwë',
+    tutorial: 'Ùczbòwnik',
+    accountBtn: 'Kònto Blocks™',
+    playAsGuest: 'Grôj jakò Gòsc',
+    selectScenario: 'Wëbierzë Scenariusz',
+    selectDifficulty: 'Równia Trudnoscë',
+    selectCountry: 'Wëbierzë Państwò',
+    searchCountry: 'Szëkôj państwa...',
+    yourCountry: 'Twój krôj',
+    treasury: 'Skôrb',
+    perTurn: 'm-c',
+    army: 'Armia',
+    manpowerLabel: 'Lëdzczé Rezerwë',
+    research: 'Badérowanié',
+    stability: 'Stabilnosc',
+    population: 'Lëdztwò',
+    turn: 'Miesąc',
+    movementPts: 'PR',
+    diplomacyPts: 'PD',
+    techTreeBtn: 'Drzéwiã Tech.',
+    spaceOceanBtn: 'Kòsmòs i Òcean',
+    councilMarketBtn: 'Rada i Rënk',
+    advisorTitle: 'Blocks™ Doradzca AI',
+    advisorLabel: 'Takticzny Doradzca AI',
+    advisorOn: 'Włączony',
+    advisorOff: 'Wëłączony',
+    allies: 'Sojusznicë',
+    noAllies: 'Felënk sojuszów',
+    topCountries: 'Ranking Mòcarstwów',
+    selectedCountry: 'Wëbróné Państwò',
+    areaLabel: 'Wiéchrzëzna',
+    yourArmy: 'Twòja armia',
+    enemyArmy: 'Całô armia państwa',
+    exactArmyTotal: 'Razã we prowincëjach i marszu',
+    tacticalWarningStronger: 'Bôczënk: Przecëwnik mô wiksze wòjskò!',
+    tacticalBalanced: 'Sëłë są równé. Bùdëj fòrtë i bôcz na pògòdã.',
+    tacticalAdvantage: 'Môsz przëwôgã wòjskòwą nad tim państwã.',
+    declareWar: 'Wëpòwiedzë wòjnã',
+    proposeAlliance: 'Sojusz',
+    proposeNap: 'Pakt ò nieagresëji',
+    proposeAccess: 'Przëstãp wòjskòwi',
+    sendUltimatum: 'Ùltimatum',
+    proposeVassal: 'Wasalizëj',
+    sendSpy: 'Wëslë Szpiega (12 PLN)',
+    blackOpsLabel: 'Krëjné Òperacje',
+    sabotageOp: 'Sabòtaż Fòrtów',
+    rebelsOp: 'Bùnt',
+    stealTechOp: 'Kradzéż Tech. (+18 PB)',
+    strategicStrikeOp: 'Rakietowi Atac',
+    nuclearStrikeOp: 'Atomòwi Atac',
+    sendAid25: 'Pòmòc 25%',
+    sendAid50: 'Pòmòc 50%',
+    proposePeace: 'Zapròpònëj pòkój',
+    atWarBadge: 'WÒJNA',
+    allyBadge: 'SOJUSZ',
+    truceBadge: 'PÒKÓJ',
+    napBadge: 'PAKT NIEAGRESËJI',
+    accessBadge: 'PRZËSTÃP WÒJSK.',
+    vassalBadge: 'TWÓJ WASAL',
+    diplomacyTab: 'Diplòmacjô',
+    encyclopediaTab: 'Wëdowiédzô',
+    capitalLabel: 'Stolëca',
+    capitalPrefix: 'Stolëca',
+    governmentLabel: 'Ùstrój',
+    curiositiesLabel: 'Cëkawòstczi ò państwie',
+    provincePanel: 'Sprôwianié Prowincëją',
+    buildingsTab: 'Bùdinczi',
+    recruitTab: 'Rekrùtacjô',
+    marchTab: 'Marsz',
+    techTab: 'Tech.',
+    arsenalTab: 'Arsenał',
+    build: 'Zbùdëj',
+    built: 'Zbùdowóné',
+    recruit: 'Rekrùtëj',
+    recruit10k: '+10 000',
+    recruitMax: 'Maks.',
+    assimilateBtn: 'Asymilëj prowincëjã (10 PLN)',
+    assimilatedBadge: 'Zasymilowónô',
+    unassimilatedWarn: 'Niespòkójnô (-25% dochòdu i òbronë)',
+    winChanceLabel: 'Szansa na wëgróną',
+    selectTargetProvince: 'Wëbierzë prowincëjã célową',
+    seaLandingTag: 'Mòrsczi Desant',
+    armySplit: 'Pòdzél òddzału',
+    issueOrder: 'Wëznaczë Marsz na Żëwò',
+    queuedOrders: 'Aktiwné marsze',
+    cancelOrder: 'Òdrzëcë',
+    treasuryModalTitle: 'Skôrb, Pòdatczi i Bank',
+    budgetRevenues: 'Miesãczné przëchòdë',
+    budgetExpenses: 'Miesãczné wëdatczi',
+    taxIncomeLabel: 'Pòdatczi òbëwatelsczé',
+    factoryPortIncomeLabel: 'Fabryki, Pòrtë i Farmë',
+    tradeIncomeLabel: 'Handel i infrastruktura',
+    vassalIncomeLabel: 'Danina òd wasalów',
+    spaceIncomeLabel: 'Kòsmòs i Megaprójektë',
+    armyUpkeepLabel: 'Ùtrzëmanié wòjska',
+    buildingUpkeepLabel: 'Ùtrzëmanié bùdinków',
+    loanPaymentsLabel: 'Ratë kredytów',
+    vassalPaidLabel: 'Trybut lenny',
+    netBalanceLabel: 'Bilans netto / m-c',
+    taxRateLabel: 'Stôwka pòdatkòwô',
+    taxWarningHigh: 'Wësoczé pòdatczi (>25%) òbniżają stabilnosc!',
+    taxBonusLow: 'Nisczé pòdatczi (<=14%) wzmacniają stabilnosc.',
+    stateBankTitle: 'Państwòwi Bank (Pòżëczczi)',
+    takeLoan60: 'Pòżëczka +60 PLN (10 m-cy)',
+    takeLoan150: 'Pòżëczka +150 PLN (10 m-cy)',
+    repayLoan: 'Spłacë wczasni',
+    noLoans: 'Felënk pòżëczków.',
+    leaderboardBtn: 'Ranking & Krónika',
+    leaderboardTitle: 'Swiatowi Ranking, Krónika, Timelapse i Galeriô Sław',
+    powersTab: 'Mòcarstwa Swiata',
+    chronicleTab: 'Krónika Wòjnë',
+    hallOfFameTab: 'Galeriô Sław Blocks™',
+    timelapseTab: 'Timelapse',
+    sortPower: 'Mòc',
+    sortArea: 'Wiéchrzëzna',
+    sortArmy: 'Armia',
+    sortTreasury: 'Skôrb',
+    noChronicle: 'Felënk wpisów w Krónice.',
+    noHallOfFame: 'Felënk rekordów Kònt Blocks™.',
+    randomEventPrompt: 'Strategiczné Wëdarzenié',
+    accountTitle: 'Kònto Blocks™',
+    loginTab: 'Logòwanié',
+    registerTab: 'Nowé Kònto',
+    profileTab: 'Profil & Transfer',
+    nickname: 'Miono gracza',
+    emailOptional: 'E-mail (nieòbòwiązkòwi)',
+    chooseAvatar: 'Wëbierzë ikònã awatara',
+    securityMethodPrompt: 'Wëbierzë zabezpieczenié kònta:',
+    passwordMethod: 'Hasło',
+    pinMethod: 'Kòd PIN',
+    passwordLabel: 'Twòje hasło',
+    pinLabel: 'Kòd PIN (4 abò 6 cyfrów)',
+    pinLengthHint: 'Ùżëj klawiaturë 0–9',
+    createAccount: 'Zrobic Kònto Blocks™',
+    loginAccount: 'Zalogùjë sã',
+    logout: 'Wëlogùjë',
+    exportAccount: 'Ekspòrtëj Kònto Blocks',
+    importAccount: 'Wczëtôj Kònto',
+    verifySecretToUnlock: 'Wpiszë Hasło abò Kòd PIN:',
+    careerStats: 'Statysticzi Kònta Blocks™',
+    turnsPlayed: 'Rozegróné miesące',
+    warsWon: 'Wëgróné wòjnë',
+    largestTerritory: 'Nôwikszô wiéchrzëzna',
+    rankLabel: 'Ranga Blocks™',
+    saveGame: 'Zapiszë Kampaniã',
+    loadSlot: 'Wczëtôj',
+    deleteSlot: 'Rëmi',
+    noSaves: 'Felënk zapisónëch grów.',
+    saveLabelPlaceholder: 'Miono zapisu',
+    languageLabel: 'Jãzëk grë',
+    performanceMode: 'Trib wëdajnoscë (Liquid Glass & Pògòda)',
+    perfAuto: 'Aùto (Wëkrëj sprzãt)',
+    perfUltra: 'Trib Ultra',
+    perfMedium: 'Trib Strzédny',
+    perfLight: 'Trib Letczi (60 FPS)',
+    soundLabel: 'Zwãk i efektë bitwë (Limiter 45%)',
+    soundOn: 'Włączony',
+    soundOff: 'Wëcëszony',
+    backToMenu: 'Przédné Menu',
+    close: 'Zamkni',
+    victoryTitle: 'WIÔLGÔ WËGRÓNÔ!',
+    victorySubtitle: 'Twòje państwò rządzë na całim swiece.',
+    defeatTitle: 'PAŃSTWÒ PÒDBITÉ',
+    defeatSubtitle: 'Stracëłes wszëtczé prowincëje.',
+    playAgain: 'Nowô Kampania',
+    tutorialTitle: 'Ùczbòwnik — Global Strategy: APEX EDITION (v1.0)',
+    tutorialDisclaimer: 'Wëdowiédzô: Wszëtczé złoté (PLN) w grze są blós wirtualną walutą i nie są prôwdzëwima piniãdzama.',
+    tutorialSteps: [
+      { title: '1. Czas Rzeczëwisti i Pauza (1x–5x)', body: 'Rządzë wòjskã na żëwò z aktywną pauzą.' },
+      { title: '2. Drzéwiã Technologii', body: 'Planëj badérowanié wòjskòwé, ekònomiczné i kòsmiczné.' },
+      { title: '3. 16 Wòjewództw Pòlsczi i Zwiad Miast', body: 'Przëblëżë Pòlskã, òglądôj miasta i bôcz na sztormë.' },
+      { title: '4. Kòsmòs i Òcean', body: 'Kòlonizëj Miesądz, Marsa i Eùropã.' },
+    ],
+    tutorialNext: 'Dali',
+    tutorialPrev: 'Nazôd',
+    tutorialFinish: 'Zaczni Rządzëc',
+    pauseNotificationHint: 'Najedzë mëszą, żebë zatrzëmac',
+    researchMilitary: 'Doktrina Wòjskòwô (+8% sëłë)',
+    researchEconomy: 'Ekònomiô (+10% dochòdu)',
+    researchLogistics: 'Logistika (+1 PR, -8% kòsztu)',
+    upgradeTech: 'Ùlepszë (25 PB)',
+    uiModeLabel: 'Trib Interfejsu',
+    uiVeryEasy: '🟢 Baro Letczi UI',
+    uiEasy: '🔵 Letczi UI',
+    uiHard: '🔴 Pro / Weteran UI',
+    battlesLabel: 'Bitwë',
+    cityReconBtn: 'Zwiad Miasta',
+    grandStrategistMedalTitle: 'Hònorowi Medal Wiôldżégò Stratega',
+    grandStrategistMedalDesc: 'Za nôwikszi takticzny talent!',
+    timelapseReplayLabel: 'Pòwtórka Timelapse Kampanii',
+    liveBattleLogLabel: 'Dziénnik Bitwów na Żëwò',
+    noBattlesYet: 'Felënk zarejestrowónëch bitwów.',
+    guidedRecruitTip: '➕ Rekrùtëj Wòjskò',
+    guidedAttackTip: '⚔️ Klëkni Czerwòną Prowincëjã Wroga, żebë Atakòwac',
+  },
+};

@@ -1,0 +1,6 @@
+{
+  "name": "Global Strategy — Blocks™",
+  "description": "Global Strategy: APEX EDITION (v1.0) — Official Real-Time Grand Strategy developed and published by Blocks™.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

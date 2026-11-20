@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-display: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+    --aoh-bg-deep: #050914;
+    --aoh-panel: rgba(9, 15, 29, 0.94);
+    --aoh-panel-soft: rgba(13, 21, 40, 0.88);
+    --aoh-gold: #f59e0b;
+    --aoh-gold-soft: rgba(245, 158, 11, 0.34);
+    --aoh-azure-soft: rgba(56, 189, 248, 0.25);
+  }
+
+  html,
+  body,
+  #root {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background-color: #050914;
+    color: #f8fafc;
+    font-family: var(--font-sans);
+  }
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-mono-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Age of History III Inspired Obsidian & Gold HUD Surfaces (Zero backdrop-filter over active Canvas2D) */
+.aoh-hud-bar {
+  background: linear-gradient(180deg, rgba(13, 20, 38, 0.96) 0%, rgba(7, 12, 24, 0.95) 100%);
+  border-color: rgba(245, 158, 11, 0.32);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 12px 32px -10px rgba(2, 6, 23, 0.85);
+}
+
+.aoh-hud-panel {
+  background: linear-gradient(165deg, rgba(12, 19, 36, 0.95) 0%, rgba(6, 11, 22, 0.96) 100%);
+  border-color: rgba(217, 159, 52, 0.3);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    0 18px 44px -12px rgba(2, 6, 23, 0.88),
+    0 0 24px -12px rgba(245, 158, 11, 0.16);
+}
+
+/* Cosmic-Tactical Liquid Glass Surfaces (3-Tier Hardware Adaptive for Modals & Menu) */
+.liquid-glass-ultra {
+  background: linear-gradient(160deg, rgba(13, 21, 40, 0.9) 0%, rgba(6, 11, 22, 0.94) 100%);
+  border-color: rgba(245, 158, 11, 0.3);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.11),
+    0 22px 54px -12px rgba(2, 6, 23, 0.86),
+    0 0 26px -10px rgba(56, 189, 248, 0.14);
+}
+
+.liquid-glass-medium {
+  background: rgba(10, 17, 34, 0.93);
+  border-color: rgba(217, 159, 52, 0.26);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 14px 36px -8px rgba(2, 6, 23, 0.78);
+}
+
+.liquid-glass-light {
+  background: rgba(8, 13, 26, 0.97);
+  border-color: rgba(71, 85, 105, 0.65);
+  box-shadow: 0 10px 26px -8px rgba(2, 6, 23, 0.8);
+}
+
+/* Custom sleek dark scrollbar */
+.gs-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.gs-scroll::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.45);
+}
+.gs-scroll::-webkit-scrollbar-thumb {
+  background: rgba(245, 158, 11, 0.28);
+  border-radius: 3px;
+}
+.gs-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(245, 158, 11, 0.5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
