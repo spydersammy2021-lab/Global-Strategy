@@ -8,64 +8,127 @@ export interface DifficultyConfig {
   aiBudgetMult: number;
   aiDefenseMult: number;
   aiEconomyMult: number;
+  aiWarAggrMult: number;
+  aiStartBudgetMult: number;
+  antiPlayerCoalitionBias: number;
 }
 
 export const DIFFICULTIES: Record<DifficultyId, DifficultyConfig> = {
-  very_easy: {
-    id: 'very_easy',
-    color: '#22C55E',
-    playerIncomeMult: 1.5,
-    playerAttackMult: 1.3,
-    aiBudgetMult: 0.85,
-    aiDefenseMult: 0.9,
+  world_conquest: {
+    id: 'world_conquest',
+    color: '#F59E0B',
+    playerIncomeMult: 4.0,
+    playerAttackMult: 2.5,
+    aiBudgetMult: 0.55,
+    aiDefenseMult: 0.65,
+    aiEconomyMult: 0.6,
+    aiWarAggrMult: 0.3,
+    aiStartBudgetMult: 0.6,
+    antiPlayerCoalitionBias: 0,
+  },
+  auto_pilot: {
+    id: 'auto_pilot',
+    color: '#22D3EE',
+    playerIncomeMult: 1.45,
+    playerAttackMult: 1.25,
+    aiBudgetMult: 0.9,
+    aiDefenseMult: 0.95,
     aiEconomyMult: 0.9,
+    aiWarAggrMult: 0.75,
+    aiStartBudgetMult: 0.9,
+    antiPlayerCoalitionBias: 0,
+  },
+  extremely_easy_plus: {
+    id: 'extremely_easy_plus',
+    color: '#FBBF24',
+    playerIncomeMult: 2.2,
+    playerAttackMult: 1.65,
+    aiBudgetMult: 0.65,
+    aiDefenseMult: 0.75,
+    aiEconomyMult: 0.65,
+    aiWarAggrMult: 0.25,
+    aiStartBudgetMult: 0.65,
+    antiPlayerCoalitionBias: 0,
+  },
+  extremely_easy: {
+    id: 'extremely_easy',
+    color: '#34D399',
+    playerIncomeMult: 2.0,
+    playerAttackMult: 1.5,
+    aiBudgetMult: 0.7,
+    aiDefenseMult: 0.8,
+    aiEconomyMult: 0.7,
+    aiWarAggrMult: 0.35,
+    aiStartBudgetMult: 0.7,
+    antiPlayerCoalitionBias: 0,
   },
   easy: {
     id: 'easy',
-    color: '#3B82F6',
-    playerIncomeMult: 1.25,
-    playerAttackMult: 1.0,
-    aiBudgetMult: 0.95,
-    aiDefenseMult: 1.0,
-    aiEconomyMult: 1.0,
+    color: '#4ADE80',
+    playerIncomeMult: 1.45,
+    playerAttackMult: 1.25,
+    aiBudgetMult: 0.85,
+    aiDefenseMult: 0.9,
+    aiEconomyMult: 0.85,
+    aiWarAggrMult: 0.65,
+    aiStartBudgetMult: 0.85,
+    antiPlayerCoalitionBias: 0,
   },
   normal: {
     id: 'normal',
-    color: '#EAB308',
+    color: '#38BDF8',
     playerIncomeMult: 1.0,
     playerAttackMult: 1.0,
     aiBudgetMult: 1.0,
     aiDefenseMult: 1.0,
     aiEconomyMult: 1.0,
+    aiWarAggrMult: 1.0,
+    aiStartBudgetMult: 1.0,
+    antiPlayerCoalitionBias: 0,
   },
   hard: {
     id: 'hard',
-    color: '#F97316',
-    playerIncomeMult: 1.0,
-    playerAttackMult: 1.0,
-    aiBudgetMult: 1.2,
-    aiDefenseMult: 1.08,
-    aiEconomyMult: 1.15,
+    color: '#FB923C',
+    playerIncomeMult: 0.88,
+    playerAttackMult: 0.92,
+    aiBudgetMult: 1.25,
+    aiDefenseMult: 1.12,
+    aiEconomyMult: 1.25,
+    aiWarAggrMult: 1.35,
+    aiStartBudgetMult: 1.25,
+    antiPlayerCoalitionBias: 0.2,
   },
   extreme: {
     id: 'extreme',
-    color: '#EF4444',
-    playerIncomeMult: 1.0,
-    playerAttackMult: 1.0,
-    aiBudgetMult: 1.4,
-    aiDefenseMult: 1.4,
-    aiEconomyMult: 1.4,
+    color: '#F43F5E',
+    playerIncomeMult: 0.75,
+    playerAttackMult: 0.85,
+    aiBudgetMult: 1.5,
+    aiDefenseMult: 1.35,
+    aiEconomyMult: 1.5,
+    aiWarAggrMult: 1.75,
+    aiStartBudgetMult: 1.5,
+    antiPlayerCoalitionBias: 0.55,
   },
   extreme_plus: {
     id: 'extreme_plus',
-    color: '#DC2626',
-    playerIncomeMult: 1.0,
-    playerAttackMult: 1.0,
-    aiBudgetMult: 1.75,
+    color: '#C084FC',
+    playerIncomeMult: 0.65,
+    playerAttackMult: 0.78,
+    aiBudgetMult: 1.85,
     aiDefenseMult: 1.55,
-    aiEconomyMult: 1.75,
+    aiEconomyMult: 1.85,
+    aiWarAggrMult: 2.2,
+    aiStartBudgetMult: 1.8,
+    antiPlayerCoalitionBias: 1.0,
   },
 };
+
+export function getDifficultyConfig(diff?: DifficultyId | string): DifficultyConfig {
+  if (!diff) return DIFFICULTIES.normal;
+  if (diff === 'very_easy') return DIFFICULTIES.extremely_easy;
+  return DIFFICULTIES[diff as DifficultyId] ?? DIFFICULTIES.normal;
+}
 
 export interface UnitSpec {
   id: UnitType;
@@ -73,7 +136,7 @@ export interface UnitSpec {
   attack: number;
   defense: number;
   speedWeight: number;
-  icon: 'infantry' | 'tank' | 'rocket' | 'antiair' | 'air' | 'naval' | 'archer' | 'cavalry' | 'cannon';
+  icon: 'infantry' | 'tank' | 'rocket' | 'antiair' | 'air' | 'naval' | 'train' | 'archer' | 'cavalry' | 'cannon';
 }
 
 export interface ScenarioConfig {
@@ -83,17 +146,11 @@ export interface ScenarioConfig {
   monthsPerTurn: number;
   isModern: boolean;
   unitRoster: UnitSpec[];
-  // Optional overrides for territory owners: [countryOrigId -> newOwnerId]
   territoryTransfers?: Record<string, string>;
-  // Optional scenario-specific name overrides
   countryNameOverrides?: Record<string, string>;
-  // Initial wars: pairs of countryIds
   initialWars?: Array<[string, string]>;
-  // Initial alliances: pairs of countryIds
   initialAlliances?: Array<[string, string]>;
-  // Army scale multiplier vs 2026 baseline
   armyScale: number;
-  // Country-specific strength multipliers
   strengthOverrides?: Record<string, number>;
 }
 
@@ -104,6 +161,7 @@ export const MODERN_UNITS: UnitSpec[] = [
   { id: 'anti_air', costPln: 1.8, attack: 1.4, defense: 2.7, speedWeight: 1, icon: 'antiair' },
   { id: 'aviation', costPln: 3.2, attack: 3.8, defense: 2.1, speedWeight: 1.4, icon: 'air' },
   { id: 'naval_fleet', costPln: 3.0, attack: 3.4, defense: 2.9, speedWeight: 1.3, icon: 'naval' },
+  { id: 'armored_train', costPln: 3.4, attack: 4.1, defense: 3.6, speedWeight: 2.6, icon: 'train' },
 ];
 
 export const HISTORICAL_UNITS: UnitSpec[] = [
@@ -115,90 +173,113 @@ export const HISTORICAL_UNITS: UnitSpec[] = [
 ];
 
 export const SCENARIOS: Record<ScenarioId, ScenarioConfig> = {
-  '966': {
-    id: '966',
-    startYear: 966,
-    startMonthIndex: 3, // Kwiecień 966 (Chrzest Polski)
-    monthsPerTurn: 6,
-    isModern: false,
-    unitRoster: HISTORICAL_UNITS,
-    armyScale: 0.09,
-    territoryTransfers: {
-      '112': '804', // Ruś Kijowska
-      '643': '804', // Ziemie Rusi
-      '703': '348', // Słowacja w granicach Węgier
-      '040': '276', // Marchia Wschodnia pod Cesarstwem
-    },
-    countryNameOverrides: {
-      '616': 'Państwo Polan (Mieszko I)',
-      '276': 'Święte Cesarstwo Rzymskie',
-      '203': 'Księstwo Czech',
-      '804': 'Ruś Kijowska',
-      '348': 'Księstwo Węgier',
-      '208': 'Królestwo Danii',
-      '752': 'Królestwo Szwecji',
-      '792': 'Cesarstwo Bizantyńskie',
-      '250': 'Królestwo Francji',
-      '826': 'Królestwo Anglii',
-      '156': 'Dynastia Song',
-    },
+  '2026': {
+    id: '2026',
+    startYear: 2026,
+    startMonthIndex: 10,
+    monthsPerTurn: 1,
+    isModern: true,
+    unitRoster: MODERN_UNITS,
+    armyScale: 1.0,
     initialAlliances: [
-      ['616', '203'], // Sojusz Mieszka I i Dobrawy (Czechy)
-    ],
-    initialWars: [],
-    strengthOverrides: {
-      '616': 16000,
-      '203': 11000,
-      '276': 26000,
-      '804': 24000,
-      '348': 14000,
-      '208': 10000,
-      '752': 11000,
-      '792': 38000,
-      '250': 22000,
-      '826': 18000,
-      '156': 95000,
-    },
-  },
-  '1410': {
-    id: '1410',
-    startYear: 1410,
-    startMonthIndex: 6, // Lipiec 1410
-    monthsPerTurn: 3,
-    isModern: false,
-    unitRoster: HISTORICAL_UNITS,
-    armyScale: 0.14,
-    territoryTransfers: {
-      '112': '440', // Belarus part of Grand Duchy of Lithuania
-      '804': '440', // Ukraine under Lithuania/Poland sphere
-      '703': '348', // Slovakia part of Kingdom of Hungary
-    },
-    countryNameOverrides: {
-      '616': 'Korona Polska',
-      '440': 'W. Ks. Litewskie',
-      '276': 'Zakon Krzyżacki / Rzesza',
-      '643': 'W. Ks. Moskiewskie',
-      '792': 'Imperium Osmańskie',
-      '826': 'Królestwo Anglii',
-      '250': 'Królestwo Francji',
-      '156': 'Dynastia Ming',
-    },
-    initialAlliances: [
-      ['616', '440'], // Polish-Lithuanian Union
-      ['203', '616'],
+      ['616', '276'],
+      ['616', '440'],
+      ['616', '250'],
+      ['616', '826'],
+      ['616', '840'],
+      ['616', '203'],
+      ['276', '250'],
+      ['840', '826'],
     ],
     initialWars: [
-      ['616', '276'],
-      ['440', '276'],
+      ['643', '804'],
+    ],
+  },
+  sandbox: {
+    id: 'sandbox',
+    startYear: 2026,
+    startMonthIndex: 0, // January 2026 Open Sandbox
+    monthsPerTurn: 1,
+    isModern: true,
+    unitRoster: MODERN_UNITS,
+    armyScale: 1.0,
+    initialAlliances: [],
+    initialWars: [],
+  },
+  '1939': {
+    id: '1939',
+    startYear: 1939,
+    startMonthIndex: 8,
+    monthsPerTurn: 1,
+    isModern: false,
+    unitRoster: HISTORICAL_UNITS,
+    armyScale: 1.0,
+    territoryTransfers: {
+      '040': '276',
+      '203': '276',
+      '112': '643',
+      '804': '643',
+      '398': '643',
+      '860': '643',
+    },
+    countryNameOverrides: {
+      '616': 'II Rzeczpospolita',
+      '276': 'III Rzesza',
+      '643': 'ZSRR',
+      '380': 'Królestwo Włoch',
+      '392': 'Cesarstwo Japonii',
+    },
+    initialAlliances: [
+      ['616', '250'],
+      ['616', '826'],
+      ['250', '826'],
+      ['276', '380'],
+    ],
+    initialWars: [
+      ['276', '616'],
+      ['276', '250'],
+      ['276', '826'],
     ],
     strengthOverrides: {
-      '616': 32000,
-      '440': 28000,
-      '276': 34000,
-      '250': 42000,
-      '826': 36000,
-      '792': 65000,
-      '156': 160000,
+      '616': 340000,
+      '276': 1250000,
+      '643': 1850000,
+      '250': 820000,
+      '826': 680000,
+      '840': 900000,
+      '392': 850000,
+      '380': 520000,
+    },
+  },
+  '1918': {
+    id: '1918',
+    startYear: 1918,
+    startMonthIndex: 10,
+    monthsPerTurn: 2,
+    isModern: false,
+    unitRoster: HISTORICAL_UNITS,
+    armyScale: 0.65,
+    territoryTransfers: {
+      '703': '203',
+    },
+    countryNameOverrides: {
+      '616': 'II Rzeczpospolita',
+      '276': 'Republika Weimarska',
+      '643': 'Rosja Radziecka',
+      '203': 'Czechosłowacja',
+    },
+    initialAlliances: [
+      ['616', '250'],
+      ['250', '826'],
+      ['826', '840'],
+    ],
+    strengthOverrides: {
+      '616': 160000,
+      '276': 220000,
+      '643': 650000,
+      '250': 540000,
+      '826': 480000,
+      '840': 620000,
     },
   },
   '1619': {
@@ -242,103 +323,91 @@ export const SCENARIOS: Record<ScenarioId, ScenarioConfig> = {
       '156': 210000,
     },
   },
-  '1918': {
-    id: '1918',
-    startYear: 1918,
-    startMonthIndex: 10, // Listopad 1918
-    monthsPerTurn: 2,
+  '1410': {
+    id: '1410',
+    startYear: 1410,
+    startMonthIndex: 6,
+    monthsPerTurn: 3,
     isModern: false,
     unitRoster: HISTORICAL_UNITS,
-    armyScale: 0.65,
+    armyScale: 0.14,
     territoryTransfers: {
-      '703': '203', // Czechoslovakia
+      '112': '440',
+      '804': '440',
+      '703': '348',
     },
     countryNameOverrides: {
-      '616': 'II Rzeczpospolita',
-      '276': 'Republika Weimarska',
-      '643': 'Rosja Radziecka',
-      '203': 'Czechosłowacja',
+      '616': 'Korona Polska',
+      '440': 'W. Ks. Litewskie',
+      '276': 'Zakon Krzyżacki / Rzesza',
+      '643': 'W. Ks. Moskiewskie',
+      '792': 'Imperium Osmańskie',
+      '826': 'Królestwo Anglii',
+      '250': 'Królestwo Francji',
+      '156': 'Dynastia Ming',
     },
     initialAlliances: [
-      ['616', '250'],
-      ['250', '826'],
-      ['826', '840'],
-    ],
-    strengthOverrides: {
-      '616': 160000,
-      '276': 220000,
-      '643': 650000,
-      '250': 540000,
-      '826': 480000,
-      '840': 620000,
-    },
-  },
-  '1939': {
-    id: '1939',
-    startYear: 1939,
-    startMonthIndex: 8, // Wrzesień 1939
-    monthsPerTurn: 1,
-    isModern: false,
-    unitRoster: HISTORICAL_UNITS,
-    armyScale: 1.0,
-    territoryTransfers: {
-      '040': '276', // Anschluss
-      '203': '276', // Protectorate
-      '112': '643',
-      '804': '643',
-      '398': '643',
-      '860': '643',
-    },
-    countryNameOverrides: {
-      '616': 'II Rzeczpospolita',
-      '276': 'III Rzesza',
-      '643': 'ZSRR',
-      '380': 'Królestwo Włoch',
-      '392': 'Cesarstwo Japonii',
-    },
-    initialAlliances: [
-      ['616', '250'],
-      ['616', '826'],
-      ['250', '826'],
-      ['276', '380'],
-    ],
-    initialWars: [
-      ['276', '616'],
-      ['276', '250'],
-      ['276', '826'],
-    ],
-    strengthOverrides: {
-      '616': 340000,
-      '276': 1250000,
-      '643': 1850000,
-      '250': 820000,
-      '826': 680000,
-      '840': 900000,
-      '392': 850000,
-      '380': 520000,
-    },
-  },
-  '2026': {
-    id: '2026',
-    startYear: 2026,
-    startMonthIndex: 10, // Listopad 2026
-    monthsPerTurn: 1,
-    isModern: true,
-    unitRoster: MODERN_UNITS,
-    armyScale: 1.0,
-    initialAlliances: [
-      ['616', '276'],
       ['616', '440'],
-      ['616', '250'],
-      ['616', '826'],
-      ['616', '840'],
-      ['616', '203'],
-      ['276', '250'],
-      ['840', '826'],
+      ['203', '616'],
     ],
     initialWars: [
-      ['643', '804'],
+      ['616', '276'],
+      ['440', '276'],
     ],
+    strengthOverrides: {
+      '616': 32000,
+      '440': 28000,
+      '276': 34000,
+      '250': 42000,
+      '826': 36000,
+      '792': 65000,
+      '156': 160000,
+    },
+  },
+  '966': {
+    id: '966',
+    startYear: 966,
+    startMonthIndex: 3,
+    monthsPerTurn: 6,
+    isModern: false,
+    unitRoster: HISTORICAL_UNITS,
+    armyScale: 0.09,
+    territoryTransfers: {
+      '112': '804',
+      '643': '804',
+      '703': '348',
+      '040': '276',
+    },
+    countryNameOverrides: {
+      '616': 'Państwo Polan (Mieszko I)',
+      '276': 'Święte Cesarstwo Rzymskie',
+      '203': 'Księstwo Czech',
+      '804': 'Ruś Kijowska',
+      '348': 'Księstwo Węgier',
+      '208': 'Królestwo Danii',
+      '752': 'Królestwo Szwecji',
+      '792': 'Cesarstwo Bizantyńskie',
+      '250': 'Królestwo Francji',
+      '826': 'Królestwo Anglii',
+      '156': 'Dynastia Song',
+    },
+    initialAlliances: [
+      ['616', '203'],
+    ],
+    initialWars: [],
+    strengthOverrides: {
+      '616': 16000,
+      '203': 11000,
+      '276': 26000,
+      '804': 24000,
+      '348': 14000,
+      '208': 10000,
+      '752': 11000,
+      '792': 38000,
+      '250': 22000,
+      '826': 18000,
+      '156': 95000,
+    },
   },
 };
 

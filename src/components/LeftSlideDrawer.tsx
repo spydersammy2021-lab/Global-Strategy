@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   AlertTriangle,
+  Anchor,
   Banknote,
   BookOpen,
   Briefcase,
@@ -11,10 +12,12 @@ import {
   Eye,
   Flame,
   Globe,
+  Hammer,
   Handshake,
   Landmark,
   Percent,
   Radiation,
+  Satellite,
   Scale,
   Shield,
   ShieldCheck,
@@ -30,6 +33,7 @@ import { getCountryEncyclopedia } from '../data/encyclopedia';
 import {
   CABINET_MINISTERS,
   MEGAPROJECTS,
+  STRATEGIC_STRAITS,
   WORLD_COUNCIL_RESOLUTIONS,
 } from '../data/spaceSectors';
 import { TECH_NODE_MAP } from '../data/techTree';
@@ -47,6 +51,7 @@ import type {
   Language,
   MegaprojectId,
   MinisterRole,
+  StraitBlockadeId,
   UnitType,
 } from '../game/types';
 import {
@@ -83,8 +88,11 @@ export function LeftSlideDrawer({
   onSelectCountry,
   onDiplomacy,
   onDeploySpy,
+  onLaunchSpySatellite,
   onBlackOp,
   onStrategicStrike,
+  onDesignCustomUnit,
+  onToggleStraitBlockade,
   onOpenLeaderboard,
   onSetTaxRate,
   onTakeLoan,
@@ -107,8 +115,11 @@ export function LeftSlideDrawer({
   onSelectCountry: (countryId: string) => void;
   onDiplomacy: (targetId: string, action: DiplomacyAction) => void;
   onDeploySpy: (targetId: string) => void;
+  onLaunchSpySatellite?: (targetId: string) => void;
   onBlackOp: (targetId: string, op: BlackOpType) => void;
   onStrategicStrike: (targetProvinceId: string, isNuclear: boolean) => void;
+  onDesignCustomUnit?: (unitType: 'tanks' | 'aviation' | 'naval_fleet', name: string) => void;
+  onToggleStraitBlockade?: (straitId: StraitBlockadeId) => void;
   onOpenLeaderboard: () => void;
   onSetTaxRate: (rate: number) => void;
   onTakeLoan: (amount: 60 | 150) => void;
@@ -125,6 +136,8 @@ export function LeftSlideDrawer({
 }) {
   const [dipSubTab, setDipSubTab] = useState<'diplomacy' | 'info'>('diplomacy');
   const [budgetTab, setBudgetTab] = useState<'treasury' | 'market' | 'megaprojects'>('treasury');
+  const [forgeClass, setForgeClass] = useState<'tanks' | 'aviation' | 'naval_fleet'>('tanks');
+  const [forgeName, setForgeName] = useState('Blocks™ Apex Mk-III');
 
   if (!activeDrawer) return null;
 
@@ -177,7 +190,6 @@ export function LeftSlideDrawer({
         )
       : null;
 
-  // Military unit breakdown for player
   const armyByType: Partial<Record<UnitType, number>> = {};
   if (player) {
     for (const p of Object.values(state.provinces)) {
@@ -200,9 +212,8 @@ export function LeftSlideDrawer({
     <section
       data-testid={`left-drawer-${activeDrawer}`}
       aria-label={titleMap[activeDrawer]}
-      className="pointer-events-auto absolute top-4 left-14 z-20 w-[330px] sm:w-[374px] max-w-[calc(100vw-4.5rem)] max-h-[calc(100vh-14.5rem)] lg:max-h-[calc(100vh-7rem)] rounded-xl border aoh-hud-panel flex flex-col overflow-hidden"
+      className="pointer-events-auto absolute top-14 md:top-4 left-2 right-2 md:left-14 md:right-auto z-20 md:w-[378px] max-h-[calc(100vh-11rem)] lg:max-h-[calc(100vh-7rem)] rounded-xl border aoh-hud-panel flex flex-col overflow-hidden"
     >
-      {/* Drawer Header */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-amber-500/25 bg-slate-950/80 shrink-0">
         <div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-amber-300">
           {activeDrawer === 'budget' && <Coins size={14} />}
@@ -221,7 +232,6 @@ export function LeftSlideDrawer({
         </button>
       </div>
 
-      {/* Scrollable Body */}
       <div className="flex-1 overflow-y-auto gs-scroll p-3.5 space-y-3 text-xs">
         {/* 1. BUDGET & ECONOMY DRAWER */}
         {activeDrawer === 'budget' && player && budget && (
@@ -475,7 +485,7 @@ export function LeftSlideDrawer({
           </>
         )}
 
-        {/* 2. MILITARY & MOBILIZATION DRAWER */}
+        {/* 2. MILITARY, CUSTOM UNIT FORGE & MARITIME STRAITS DRAWER */}
         {activeDrawer === 'military' && player && playerSummary && (
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-2">
@@ -510,6 +520,102 @@ export function LeftSlideDrawer({
                 ))
               )}
             </div>
+
+            {/* Custom Unit Designer / Blueprint Forge */}
+            {onDesignCustomUnit && (
+              <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-amber-200 flex items-center gap-1.5">
+                    <Hammer size={13} className="text-amber-400" />
+                    {t.unitDesignerTitle}
+                  </span>
+                  <span className="text-[10px] font-mono-num text-amber-300">
+                    {(state.customBlueprints ?? []).length} MK
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-1">
+                  {(['tanks', 'aviation', 'naval_fleet'] as const).map((cls) => (
+                    <button
+                      key={cls}
+                      type="button"
+                      onClick={() => setForgeClass(cls)}
+                      className={`py-1 px-1.5 rounded border text-[10px] font-bold cursor-pointer truncate ${
+                        forgeClass === cls
+                          ? 'border-amber-400 bg-amber-400 text-slate-950'
+                          : 'border-slate-700 bg-slate-950/80 text-slate-300'
+                      }`}
+                    >
+                      {UNIT_NAMES[lang][cls]}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="text"
+                  value={forgeName}
+                  onChange={(e) => setForgeName(e.target.value)}
+                  maxLength={28}
+                  aria-label={t.unitDesignerTitle}
+                  className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-white focus:border-amber-400 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  data-testid="forge-unit-btn"
+                  disabled={player.treasury < 18 || !forgeName.trim()}
+                  onClick={() => onDesignCustomUnit(forgeClass, forgeName.trim())}
+                  className="w-full py-1.5 rounded bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 text-[11px] font-extrabold cursor-pointer"
+                >
+                  Forge Custom Blueprint (18 PLN)
+                </button>
+                {(state.customBlueprints ?? []).length > 0 && (
+                  <div className="space-y-1 pt-1 border-t border-amber-500/20">
+                    {(state.customBlueprints ?? []).map((bp) => (
+                      <div key={bp.id} className="flex justify-between text-[10px] font-mono-num text-amber-100">
+                        <span className="truncate">{bp.name}</span>
+                        <span className="text-emerald-300">
+                          ATK{bp.firepower} ARM{bp.armor} SPD{bp.speed}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Maritime Strait Blockades */}
+            {onToggleStraitBlockade && (
+              <div className="rounded-lg border border-sky-500/35 bg-sky-500/10 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-sky-200 flex items-center gap-1.5">
+                    <Anchor size={13} className="text-sky-400" />
+                    {t.straitBlockadeTitle}
+                  </span>
+                  <span className="text-[10px] font-mono-num text-sky-300">
+                    {Object.keys(state.blockadedStraits ?? {}).length}/{STRATEGIC_STRAITS.length}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {STRATEGIC_STRAITS.map((strait) => {
+                    const active = Boolean(state.blockadedStraits?.[strait.id]);
+                    return (
+                      <button
+                        key={strait.id}
+                        type="button"
+                        data-testid={`strait-toggle-${strait.id}`}
+                        onClick={() => onToggleStraitBlockade(strait.id)}
+                        className={`py-1.5 px-2 rounded border text-[10px] font-bold text-left cursor-pointer truncate ${
+                          active
+                            ? 'border-rose-400 bg-rose-600/30 text-rose-100'
+                            : 'border-slate-700 bg-slate-950/80 text-slate-300 hover:border-sky-400'
+                        }`}
+                      >
+                        {active ? '⛔ ' : '⚓ '}
+                        {strait.name[lang]}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <div className="rounded-lg border border-rose-500/35 bg-rose-500/10 p-3 space-y-2">
               <div className="flex items-center justify-between">
@@ -646,7 +752,6 @@ export function LeftSlideDrawer({
               </div>
             )}
 
-            {/* Top World Powers */}
             <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-2.5">
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1">
@@ -691,7 +796,6 @@ export function LeftSlideDrawer({
               </div>
             </div>
 
-            {/* Selected Foreign Nation Card */}
             {inspected && inspectedSum && (
               <div className="rounded-lg border border-amber-500/30 bg-slate-950/80 p-3 space-y-2.5">
                 <div className="flex items-center gap-2.5 min-w-0">
@@ -779,9 +883,10 @@ export function LeftSlideDrawer({
                       </div>
                       {inspectedCapital && (
                         <div className="flex justify-between">
-                          <span className="text-slate-400">Weather:</span>
+                          <span className="text-slate-400">Climate:</span>
                           <span className="font-semibold text-amber-300">
-                            {WEATHER_NAMES[lang][inspectedCapital.weather].label}
+                            {WEATHER_NAMES[lang][inspectedCapital.weather].label} ·{' '}
+                            {Math.round(inspectedCapital.temperatureC ?? 14)}°C
                           </span>
                         </div>
                       )}
@@ -853,6 +958,7 @@ export function LeftSlideDrawer({
                         {!isAtWar ? (
                           <button
                             type="button"
+                            data-testid="declare-war-btn"
                             onClick={() => onDiplomacy(inspected.id, 'war')}
                             className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded bg-rose-600 hover:bg-rose-500 text-xs font-bold text-white cursor-pointer"
                           >
@@ -920,14 +1026,29 @@ export function LeftSlideDrawer({
                           </div>
                         )}
 
-                        <button
-                          type="button"
-                          onClick={() => onDeploySpy(inspected.id)}
-                          className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded border border-sky-500/40 bg-slate-900 hover:bg-slate-800 text-[11px] font-semibold text-sky-300 cursor-pointer"
-                        >
-                          <Eye size={12} />
-                          {t.sendSpy}
-                        </button>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => onDeploySpy(inspected.id)}
+                            className="flex items-center justify-center gap-1 py-1.5 rounded border border-sky-500/40 bg-slate-900 hover:bg-slate-800 text-[10.5px] font-semibold text-sky-300 cursor-pointer truncate px-1.5"
+                          >
+                            <Eye size={12} className="shrink-0" />
+                            <span className="truncate">{t.sendSpy}</span>
+                          </button>
+
+                          {onLaunchSpySatellite && (
+                            <button
+                              type="button"
+                              data-testid="launch-spy-satellite-btn"
+                              disabled={player.treasury < 22}
+                              onClick={() => onLaunchSpySatellite(inspected.id)}
+                              className="flex items-center justify-center gap-1 py-1.5 rounded border border-cyan-400/50 bg-cyan-950/60 hover:bg-cyan-900/70 disabled:opacity-40 text-[10.5px] font-bold text-cyan-200 cursor-pointer truncate px-1.5"
+                            >
+                              <Satellite size={12} className="shrink-0" />
+                              <span className="truncate">{t.spySatelliteBtn}</span>
+                            </button>
+                          )}
+                        </div>
 
                         <div className="rounded border border-slate-800 bg-slate-900/75 p-2 space-y-1">
                           <div className="text-[10px] font-bold uppercase text-purple-300 flex items-center gap-1">
@@ -1012,7 +1133,6 @@ export function LeftSlideDrawer({
         {/* 4. GOVERNMENT, CABINET, IDEOLOGY & WORLD COUNCIL DRAWER */}
         {activeDrawer === 'government' && player && (
           <div className="space-y-3">
-            {/* Cabinet */}
             <div className="space-y-2">
               <div className="text-[10px] font-bold uppercase tracking-wider text-sky-300 flex items-center gap-1.5">
                 <Briefcase size={12} /> Cabinet of Ministers
@@ -1051,7 +1171,6 @@ export function LeftSlideDrawer({
               })}
             </div>
 
-            {/* Ideology */}
             <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-2.5 space-y-1.5">
               <div className="text-[10px] font-bold uppercase tracking-wider text-purple-300 flex items-center gap-1.5">
                 <Scale size={12} /> Ideology · Next Election Day {player.nextElectionDay}
@@ -1081,7 +1200,6 @@ export function LeftSlideDrawer({
               })}
             </div>
 
-            {/* World Council */}
             <div className="rounded-lg border border-sky-500/35 bg-sky-500/10 p-3 space-y-2">
               <div className="flex items-center justify-between text-[10px] font-bold uppercase text-sky-300">
                 <span>World Council</span>

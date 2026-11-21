@@ -1,8 +1,9 @@
 import { CABINET_MINISTERS, SPACE_OCEAN_NODES } from '../data/spaceSectors';
-import { DIFFICULTIES, getUnitSpec } from '../data/scenarios';
+import { getDifficultyConfig, getUnitSpec } from '../data/scenarios';
 import type {
   BattleEvent,
   BudgetBreakdown,
+  CustomUnitBlueprint,
   DifficultyId,
   GameState,
   ProvinceState,
@@ -11,7 +12,7 @@ import type {
   UnitType,
   WeatherKind,
 } from './types';
-import { WEATHER_EFFECTS } from './weather';
+import { getExtremeClimateAttrition, WEATHER_EFFECTS } from './weather';
 
 export function getTotalUnits(units: UnitBreakdown): number {
   let sum = 0;
@@ -101,6 +102,9 @@ export interface ArmyPowerOptions {
   isSpectator?: boolean;
   ministerAttackBonus?: number;
   spacePowerBonus?: number;
+  customBlueprints?: CustomUnitBlueprint[];
+  temperatureC?: number;
+  logisticsTechLevel?: number;
 }
 
 export function computeArmyPower(
@@ -114,7 +118,7 @@ export function computeArmyPower(
     typeof options === 'boolean' ? { hasFort: options } : options;
   const weather: WeatherKind = opts.weather ?? 'sunny';
   const weatherSpec = WEATHER_EFFECTS[weather];
-  const diffConfig = DIFFICULTIES[opts.difficulty ?? 'normal'];
+  const diffConfig = getDifficultyConfig(opts.difficulty);
 
   let power = 0;
   for (const [k, v] of Object.entries(units)) {
@@ -126,7 +130,18 @@ export function computeArmyPower(
       ? weatherSpec.armorAirAttackMult
       : 1.0;
     const navalBonus = uType === 'naval_fleet' && opts.isNavalAssault ? 1.25 : 1.0;
-    power += v * base * weatherUnitMult * navalBonus;
+
+    let blueprintBonus = 1.0;
+    if (opts.customBlueprints && opts.customBlueprints.length > 0 && opts.isPlayerSide) {
+      const matching = opts.customBlueprints.filter((bp) => bp.category === uType);
+      if (matching.length > 0) {
+        const best = matching[matching.length - 1];
+        const statScore = side === 'attack' ? best.firepower * 0.025 + best.speed * 0.01 : best.armor * 0.025;
+        blueprintBonus += statScore;
+      }
+    }
+
+    power += v * base * weatherUnitMult * navalBonus * blueprintBonus;
   }
 
   const techBonus = 1 + militaryTechLevel * 0.08 + (opts.ministerAttackBonus ?? 0);
@@ -138,6 +153,16 @@ export function computeArmyPower(
   const assimFactor =
     side === 'defense' && opts.assimilated === false ? 0.75 : 1.0;
 
+  let climateCombatMult = 1.0;
+  if (side === 'attack' && typeof opts.temperatureC === 'number') {
+    const attr = getExtremeClimateAttrition(
+      opts.temperatureC,
+      opts.logisticsTechLevel ?? 0,
+      opts.difficulty === 'world_conquest' && Boolean(opts.isPlayerSide),
+    );
+    climateCombatMult = attr.combatMult;
+  }
+
   let diffMult = 1.0;
   if (!opts.isSpectator) {
     if (side === 'attack' && opts.isPlayerSide) {
@@ -147,7 +172,7 @@ export function computeArmyPower(
     }
   }
 
-  return power * techBonus * fortBonus * coastalBonus * stormPenalty * weatherDefBonus * assimFactor * diffMult;
+  return power * techBonus * fortBonus * coastalBonus * stormPenalty * weatherDefBonus * assimFactor * climateCombatMult * diffMult;
 }
 
 function getDefenseMinisterBonus(state: GameState, countryId: string): number {
@@ -190,6 +215,9 @@ export function calculateWinChance(params: {
       isNavalAssault,
       hasWaterStorm,
       ministerAttackBonus: getDefenseMinisterBonus(state, attackerId),
+      customBlueprints: state.customBlueprints,
+      temperatureC: defenderProvince.temperatureC,
+      logisticsTechLevel: attackerCountry?.tech.logistics ?? 0,
     },
   );
   const defPower = computeArmyPower(
@@ -206,6 +234,7 @@ export function calculateWinChance(params: {
       difficulty: state.difficulty,
       isPlayerSide: defenderProvince.ownerId === state.playerCountryId,
       isSpectator,
+      customBlueprints: state.customBlueprints,
     },
   );
 
@@ -237,12 +266,14 @@ export function resolveProvinceBattle(params: {
   attackerId: string;
   attackerUnits: UnitBreakdown;
   attackerMilTech: number;
+  attackerLogTech?: number;
   defenderProvince: ProvinceState;
   defenderMilTech: number;
   battleId: string;
   isNavalAssault?: boolean;
   hasWaterStorm?: boolean;
   attackerMinisterBonus?: number;
+  customBlueprints?: CustomUnitBlueprint[];
 }): {
   event: BattleEvent;
   survivingAttackers: UnitBreakdown;
@@ -257,12 +288,14 @@ export function resolveProvinceBattle(params: {
     attackerId,
     attackerUnits,
     attackerMilTech,
+    attackerLogTech = 0,
     defenderProvince,
     defenderMilTech,
     battleId,
     isNavalAssault = false,
     hasWaterStorm = false,
     attackerMinisterBonus = 0,
+    customBlueprints,
   } = params;
   const defenderId = defenderProvince.ownerId;
   const hasFort = defenderProvince.buildings.includes('fort');
@@ -279,6 +312,9 @@ export function resolveProvinceBattle(params: {
     isNavalAssault,
     hasWaterStorm,
     ministerAttackBonus: attackerMinisterBonus,
+    customBlueprints,
+    temperatureC: defenderProvince.temperatureC,
+    logisticsTechLevel: attackerLogTech,
   });
   const defPower = computeArmyPower(
     defenderProvince.units,
@@ -294,6 +330,7 @@ export function resolveProvinceBattle(params: {
       difficulty,
       isPlayerSide: playerCountryId ? defenderId === playerCountryId : undefined,
       isSpectator,
+      customBlueprints,
     },
   );
 
@@ -388,6 +425,7 @@ const BUILDING_UPKEEP: Record<string, number> = {
   port: 0.4,
   fort: 0.6,
   university: 0.7,
+  railway: 0.35,
   coastal_defense: 0.5,
   missile_silo: 1.1,
   spaceport: 1.6,
@@ -402,7 +440,7 @@ function computePreTributeBudget(
 } {
   const country = state.countries[countryId];
   const isSpectator = state.gameMode === 'bot_spectator';
-  const diff = DIFFICULTIES[state.difficulty ?? 'normal'];
+  const diff = getDifficultyConfig(state.difficulty);
   const diffMult = isSpectator
     ? 1.0
     : country?.isPlayer
@@ -431,6 +469,7 @@ function computePreTributeBudget(
   let factoryAndPortIncome = 0;
   let buildingUpkeep = 0;
   let totalArmy = 0;
+  let portCount = 0;
 
   for (const prov of ownedProvs) {
     const assimMult = prov.assimilated ? 1.0 : 0.75;
@@ -451,7 +490,13 @@ function computePreTributeBudget(
 
     if (prov.buildings.includes('factory'))
       factoryAndPortIncome += 4.5 * assimMult * diffMult * ministerEconMult * devastationMult;
-    if (prov.buildings.includes('port')) factoryAndPortIncome += 3.0 * assimMult * diffMult;
+    if (prov.buildings.includes('port')) {
+      factoryAndPortIncome += 3.0 * assimMult * diffMult;
+      portCount += 1;
+    }
+    if (prov.buildings.includes('railway')) {
+      factoryAndPortIncome += 1.6 * assimMult * diffMult;
+    }
     if (prov.buildings.includes('farm')) {
       factoryAndPortIncome += 1.4 * weatherFarmMult * assimMult * diffMult * winterPenalty;
     }
@@ -478,7 +523,13 @@ function computePreTributeBudget(
 
   const councilTradeBonus = state.worldCouncil?.passedEffects.includes('res_green_maritime') ? 1.15 : 1.0;
   const allyBonus = 1 + (country?.allies.length ?? 0) * 0.12;
-  const tradeIncome = ownedProvs.length * 0.45 * allyBonus * diffMult * councilTradeBonus;
+  // Maritime Strait Blockade penalty: -35% trade if an enemy country blockades a strategic strait
+  const enemyBlockading = Object.values(state.blockadedStraits ?? {}).some(
+    (blockerId) => blockerId && blockerId !== countryId && country?.atWarWith.includes(blockerId),
+  );
+  const blockadeMult = enemyBlockading ? 0.65 : 1.0;
+  const convoyBonus = portCount * 1.1;
+  const tradeIncome = (ownedProvs.length * 0.45 + convoyBonus) * allyBonus * diffMult * councilTradeBonus * blockadeMult;
 
   const logisticsSave = Math.max(0.75, 1 - (country?.tech.logistics ?? 0) * 0.05);
   const armyUpkeep = totalArmy * 0.00018 * logisticsSave;

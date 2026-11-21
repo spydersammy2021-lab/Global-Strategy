@@ -1,8 +1,10 @@
 import React from 'react';
-import { Bot, Globe, Layout, Monitor, Volume2, VolumeX, X } from 'lucide-react';
-import { glassClass } from '../game/performance';
+import { Bot, Gauge, Globe, Layout, Mic, Monitor, Volume2, VolumeX, X } from 'lucide-react';
+import { type FpsCap, glassClass } from '../game/performance';
 import type { EffectiveTier, Language, PerformanceMode, UiMode } from '../game/types';
 import { LANGUAGE_LABELS, type Translations } from '../i18n/translations';
+
+const FPS_OPTIONS: FpsCap[] = [60, 120, 144, 'unlimited'];
 
 export function SettingsModal({
   isOpen,
@@ -11,11 +13,15 @@ export function SettingsModal({
   onChangeLang,
   perfMode,
   onChangePerfMode,
+  fpsCap = 'unlimited',
+  onChangeFpsCap,
   effectiveTier,
   muted,
   onToggleMute,
   advisorEnabled,
   onToggleAdvisor,
+  voiceEnabled = true,
+  onToggleVoice,
   uiMode,
   onChangeUiMode,
   t,
@@ -26,11 +32,15 @@ export function SettingsModal({
   onChangeLang: (lang: Language) => void;
   perfMode: PerformanceMode;
   onChangePerfMode: (m: PerformanceMode) => void;
+  fpsCap?: FpsCap;
+  onChangeFpsCap?: (cap: FpsCap) => void;
   effectiveTier: EffectiveTier;
   muted: boolean;
   onToggleMute: () => void;
   advisorEnabled: boolean;
   onToggleAdvisor: () => void;
+  voiceEnabled?: boolean;
+  onToggleVoice?: () => void;
   uiMode: UiMode;
   onChangeUiMode: (mode: UiMode) => void;
   t: Translations;
@@ -60,6 +70,36 @@ export function SettingsModal({
         </div>
 
         <div className="p-6 space-y-5 max-h-[82vh] overflow-y-auto gs-scroll">
+          {/* Uncapped / Configurable Frame Rate Limit Selector */}
+          {onChangeFpsCap && (
+            <div>
+              <div className="flex items-center gap-2 text-xs font-semibold text-slate-300 mb-2">
+                <Gauge size={14} className="text-cyan-400" />
+                {t.fpsLimitLabel}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                {FPS_OPTIONS.map((cap) => {
+                  const active = fpsCap === cap;
+                  return (
+                    <button
+                      key={String(cap)}
+                      type="button"
+                      data-testid={`fps-cap-${String(cap)}`}
+                      onClick={() => onChangeFpsCap(cap)}
+                      className={`py-2 px-2 rounded-lg border text-[11px] font-mono-num font-bold text-center transition-colors cursor-pointer ${
+                        active
+                          ? 'border-cyan-400 bg-cyan-500/20 text-cyan-200'
+                          : 'border-slate-800 bg-slate-950/60 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      {cap === 'unlimited' ? `∞ ${t.fpsUnlimited}` : `${cap} FPS`}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* 3-Tier Visual Interface Mode Switcher */}
           <div>
             <div className="flex items-center gap-2 text-xs font-semibold text-slate-300 mb-2">
@@ -162,6 +202,26 @@ export function SettingsModal({
               {advisorEnabled ? t.advisorOn : t.advisorOff}
             </button>
           </div>
+
+          {/* Speaking Voice AI Toggle */}
+          {onToggleVoice && (
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+              <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
+                <Mic size={15} className="text-cyan-400" />
+                {t.voiceAiLabel}
+              </div>
+              <button
+                type="button"
+                data-testid="settings-voice-toggle"
+                onClick={onToggleVoice}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer ${
+                  voiceEnabled ? 'bg-cyan-400 text-slate-950' : 'bg-slate-800 text-slate-300'
+                }`}
+              >
+                {voiceEnabled ? t.voiceOn : t.voiceOff}
+              </button>
+            </div>
+          )}
 
           {/* Sound Toggle */}
           <div className="flex items-center justify-between pt-2 border-t border-slate-800">

@@ -1,9 +1,16 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { WORLD_HEIGHT, WORLD_WIDTH, buildWorldMapData } from '../game/mapGen';
+import { type FpsCap, getFpsCapIntervalMs } from '../game/performance';
 import type { EffectiveTier } from '../game/types';
 
-// Animated Grand Strategy World Map Backdrop for the Main Menu
-export function AnimatedMenuMapBg({ effectiveTier }: { effectiveTier: EffectiveTier }) {
+// Animated Grand Strategy World Map Backdrop for the Main Menu (supports uncapped high-refresh Hz)
+export function AnimatedMenuMapBg({
+  effectiveTier,
+  fpsCap = 'unlimited',
+}: {
+  effectiveTier: EffectiveTier;
+  fpsCap?: FpsCap;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mapData = useMemo(() => buildWorldMapData(), []);
 
@@ -34,7 +41,7 @@ export function AnimatedMenuMapBg({ effectiveTier }: { effectiveTier: EffectiveT
   const capitalPoints = useMemo(() => {
     return mapData.provinces
       .filter((p) => p.capitalCity || p.id.endsWith('_p0'))
-      .slice(0, 28)
+      .slice(0, 32)
       .map((p) => p.centroid);
   }, [mapData]);
 
@@ -49,7 +56,6 @@ export function AnimatedMenuMapBg({ effectiveTier }: { effectiveTier: EffectiveT
 
     octx.scale(scale, scale);
 
-    // Subtle latitude/longitude grid lines
     octx.strokeStyle = 'rgba(245, 158, 11, 0.06)';
     octx.lineWidth = 0.65;
     octx.beginPath();
@@ -65,11 +71,11 @@ export function AnimatedMenuMapBg({ effectiveTier }: { effectiveTier: EffectiveT
 
     for (const item of cachedPaths) {
       octx.fillStyle = item.color;
-      octx.globalAlpha = item.isHighlight ? 0.44 : 0.24;
+      octx.globalAlpha = item.isHighlight ? 0.46 : 0.25;
       octx.fill(item.path);
       octx.globalAlpha = 1;
       octx.strokeStyle = item.isHighlight
-        ? 'rgba(251, 191, 36, 0.62)'
+        ? 'rgba(251, 191, 36, 0.65)'
         : 'rgba(245, 158, 11, 0.2)';
       octx.lineWidth = item.isHighlight ? 0.95 : 0.5;
       octx.stroke(item.path);
@@ -101,10 +107,17 @@ export function AnimatedMenuMapBg({ effectiveTier }: { effectiveTier: EffectiveT
     window.addEventListener('resize', resize);
 
     let lastDraw = 0;
+    const capInterval = getFpsCapIntervalMs(fpsCap);
+    const minStep =
+      effectiveTier === 'light'
+        ? Math.max(33, capInterval)
+        : capInterval > 0
+        ? Math.max(0, capInterval - 0.5)
+        : 0;
+
     const render = (now: number) => {
       animId = requestAnimationFrame(render);
-      const minStep = effectiveTier === 'light' ? 140 : 48;
-      if (now - lastDraw < minStep) return;
+      if (minStep > 0 && now - lastDraw < minStep) return;
       lastDraw = now;
 
       const dpr = Math.min(window.devicePixelRatio || 1, effectiveTier === 'light' ? 1 : 1.5);
@@ -117,7 +130,6 @@ export function AnimatedMenuMapBg({ effectiveTier }: { effectiveTier: EffectiveT
       ctx.save();
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      // Deep grand-strategy ocean gradient
       const oceanGrad = ctx.createRadialGradient(
         width * 0.55,
         height * 0.45,
@@ -140,10 +152,9 @@ export function AnimatedMenuMapBg({ effectiveTier }: { effectiveTier: EffectiveT
         ctx.drawImage(offscreenMap, 0, 0, WORLD_WIDTH, WORLD_HEIGHT);
       }
 
-      // Golden capital beacons + strategic sea/air trajectory arcs
       if (effectiveTier !== 'light') {
-        ctx.strokeStyle = 'rgba(251, 191, 36, 0.22)';
-        ctx.lineWidth = 1.1 / baseScale;
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.24)';
+        ctx.lineWidth = 1.05 / baseScale;
         ctx.setLineDash([5 / baseScale, 5 / baseScale]);
         ctx.beginPath();
         for (let i = 0; i < Math.min(capitalPoints.length - 1, 10); i++) {
@@ -158,7 +169,7 @@ export function AnimatedMenuMapBg({ effectiveTier }: { effectiveTier: EffectiveT
         for (let i = 0; i < capitalPoints.length; i++) {
           const [cx, cy] = capitalPoints[i];
           const pulse = 0.5 + 0.5 * Math.sin(now * 0.0025 + i);
-          ctx.fillStyle = `rgba(251, 191, 36, ${0.4 + pulse * 0.45})`;
+          ctx.fillStyle = `rgba(251, 191, 36, ${0.42 + pulse * 0.48})`;
           ctx.beginPath();
           ctx.arc(cx, cy, (2.2 + pulse * 1.1) / baseScale, 0, Math.PI * 2);
           ctx.fill();
@@ -167,13 +178,12 @@ export function AnimatedMenuMapBg({ effectiveTier }: { effectiveTier: EffectiveT
 
       ctx.restore();
 
-      // Vignette overlay for crisp foreground readability over negative space
       ctx.save();
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const vignette = ctx.createLinearGradient(0, 0, width, 0);
-      vignette.addColorStop(0, 'rgba(5, 9, 20, 0.86)');
-      vignette.addColorStop(0.38, 'rgba(5, 9, 20, 0.48)');
-      vignette.addColorStop(1, 'rgba(5, 9, 20, 0.72)');
+      vignette.addColorStop(0, 'rgba(4, 8, 18, 0.88)');
+      vignette.addColorStop(0.38, 'rgba(4, 8, 18, 0.46)');
+      vignette.addColorStop(1, 'rgba(4, 8, 18, 0.74)');
       ctx.fillStyle = vignette;
       ctx.fillRect(0, 0, width, height);
       ctx.restore();
@@ -184,7 +194,7 @@ export function AnimatedMenuMapBg({ effectiveTier }: { effectiveTier: EffectiveT
       cancelAnimationFrame(animId);
       window.removeEventListener('resize', resize);
     };
-  }, [offscreenMap, capitalPoints, effectiveTier]);
+  }, [offscreenMap, capitalPoints, effectiveTier, fpsCap]);
 
   return (
     <canvas

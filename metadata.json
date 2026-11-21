@@ -1,6 +1,6 @@
 {
   "name": "Global Strategy — Blocks™",
-  "description": "Global Strategy: APEX EDITION (v1.0) — Official Real-Time Grand Strategy developed and published by Blocks™.",
+  "description": "Global Strategy: APEX EDITION (VERSION 3.0) — Official Real-Time Grand Strategy with Live Thermal Atlas, World Conquest Mode, Auto-Pilot Airlifts, Armored Trains & Space Conquest by Blocks™.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -207,6 +207,57 @@ class SafeSoundEngine {
     nGain.connect(out);
     noise.start(now);
   }
+
+  public playAirliftJet(): void {
+    const audio = this.ensureContext();
+    if (!audio) return;
+    const { ctx, out } = audio;
+    const now = ctx.currentTime;
+
+    const bufferSize = Math.floor(ctx.sampleRate * 0.28);
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let k = 0; k < bufferSize; k++) {
+      const env = Math.sin((k / bufferSize) * Math.PI);
+      data[k] = (Math.random() * 2 - 1) * env;
+    }
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(520, now);
+    filter.frequency.exponentialRampToValueAtTime(1600, now + 0.14);
+    filter.frequency.exponentialRampToValueAtTime(420, now + 0.28);
+    filter.Q.value = 1.6;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.18, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(out);
+    noise.start(now);
+  }
+
+  public playAlertTone(): void {
+    const audio = this.ensureContext();
+    if (!audio) return;
+    const { ctx, out } = audio;
+    const now = ctx.currentTime;
+    [587.33, 880].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + i * 0.08);
+      gain.gain.setValueAtTime(0.14, now + i * 0.08);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.08 + 0.18);
+      osc.connect(gain);
+      gain.connect(out);
+      osc.start(now + i * 0.08);
+      osc.stop(now + i * 0.08 + 0.19);
+    });
+  }
 }
 
 export const soundEngine = new SafeSoundEngine();

@@ -1,16 +1,21 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { Crosshair, Maximize2, Minus, Plus } from 'lucide-react';
 import { MAJOR_CITIES } from '../data/cities';
+import { STRATEGIC_STRAITS } from '../data/spaceSectors';
 import { getExactCountryArmy, getTotalUnits } from '../game/combat';
 import { WORLD_HEIGHT, WORLD_WIDTH, buildWorldMapData, projectLonLat } from '../game/mapGen';
+import { type FpsCap, getFpsCapIntervalMs } from '../game/performance';
 import type {
   BattleEvent,
   EffectiveTier,
   FlagPattern,
   GameState,
   Language,
+  MapOverlayMode,
   PerformanceMode,
+  StraitBlockadeId,
 } from '../game/types';
+import { temperatureToHex } from '../game/weather';
 import { drawCanvasFlag } from './FlagBadge';
 
 interface Camera {
@@ -29,7 +34,6 @@ const PARTICLE_SEED = Array.from({ length: PARTICLE_COUNT }, (_, i) => ({
 
 function formatCounterTroops(troops: number): string {
   if (troops >= 1_000_000) return `${(troops / 1_000_000).toFixed(2)}M`;
-  if (troops >= 10_000) return `${(troops / 1000).toFixed(1)}k`;
   if (troops >= 1000) return `${(troops / 1000).toFixed(1)}k`;
   return `${Math.round(troops)}`;
 }
@@ -57,29 +61,23 @@ function drawRectangularArmyCounter(
   const bx1 = cx - boxW * 0.5;
   const by1 = cy;
 
-  // Drop shadow
-  ctx.fillStyle = 'rgba(2, 6, 16, 0.72)';
+  ctx.fillStyle = 'rgba(2, 6, 16, 0.76)';
   ctx.fillRect(bx1 + 0.9 / baseScale, by1 + 0.9 / baseScale, boxW, boxH);
 
-  // Dark obsidian counter fill
-  ctx.fillStyle = 'rgba(8, 14, 28, 0.94)';
+  ctx.fillStyle = 'rgba(6, 11, 24, 0.95)';
   ctx.fillRect(bx1, by1, boxW, boxH);
 
-  // Inner top sheen
   ctx.fillStyle = 'rgba(255, 255, 255, 0.07)';
   ctx.fillRect(bx1, by1, boxW, boxH * 0.42);
 
-  // Crisp frame border
   ctx.strokeStyle = borderColor;
   ctx.lineWidth = 0.85 / baseScale;
   ctx.strokeRect(bx1, by1, boxW, boxH);
 
-  // Mini Flag on left
   const fx = bx1 + padX;
   const fy = by1 + (boxH - flagH) * 0.5;
   drawCanvasFlag(ctx, flag, fx, fy, flagW, flagH);
 
-  // Hairline vertical divider
   ctx.strokeStyle = 'rgba(148, 163, 184, 0.32)';
   ctx.lineWidth = 0.55 / baseScale;
   ctx.beginPath();
@@ -87,7 +85,6 @@ function drawRectangularArmyCounter(
   ctx.lineTo(fx + flagW + gap * 0.5, by1 + boxH - 1.2 / baseScale);
   ctx.stroke();
 
-  // Tabular troop count on right
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = textColor;
@@ -113,7 +110,6 @@ function drawArmoredBattleClash(
   ctx.save();
   ctx.translate(bx, by);
 
-  // Red/Amber ground battle glow
   const glow = ctx.createRadialGradient(0, 0, s * 0.15, 0, 0, s * 1.65);
   glow.addColorStop(0, 'rgba(245, 158, 11, 0.42)');
   glow.addColorStop(0.5, 'rgba(239, 68, 68, 0.25)');
@@ -123,7 +119,6 @@ function drawArmoredBattleClash(
   ctx.arc(0, 0, s * 1.65, 0, Math.PI * 2);
   ctx.fill();
 
-  // Twin Opposing Morale Bars (Attacker vs Defender) above clash
   const totalPow = Math.max(1, battle.attackerPower + battle.defenderPower);
   const attFrac = Math.max(0.14, Math.min(0.86, battle.attackerPower / totalPow));
   const barW = s * 2.55;
@@ -137,13 +132,10 @@ function drawArmoredBattleClash(
   ctx.lineWidth = 0.7 / baseScale;
   ctx.strokeRect(barX - 1.5 / baseScale, barY - 1.5 / baseScale, barW + 3 / baseScale, barH + 3 / baseScale);
 
-  // Attacker morale bar (emerald/gold left)
   ctx.fillStyle = '#10B981';
   ctx.fillRect(barX, barY, barW * attFrac, barH);
-  // Defender morale bar (crimson right)
   ctx.fillStyle = '#EF4444';
   ctx.fillRect(barX + barW * attFrac, barY, barW * (1 - attFrac), barH);
-  // Center morale clash seam
   ctx.fillStyle = '#FEF08A';
   ctx.fillRect(barX + barW * attFrac - 0.8 / baseScale, barY - 0.8 / baseScale, 1.6 / baseScale, barH + 1.6 / baseScale);
 
@@ -151,18 +143,15 @@ function drawArmoredBattleClash(
   ctx.save();
   ctx.translate(-s * 0.58, s * 0.24);
   ctx.rotate(-0.56 + swingAngle);
-  // Steel Vambrace & Gauntlet Cuff
   ctx.fillStyle = '#475569';
   ctx.strokeStyle = '#0F172A';
   ctx.lineWidth = 0.8 / baseScale;
   ctx.fillRect(-s * 0.72, -s * 0.16, s * 0.45, s * 0.32);
   ctx.strokeRect(-s * 0.72, -s * 0.16, s * 0.45, s * 0.32);
-  // Armored Knuckle Plate + Gold Trim
   ctx.fillStyle = '#94A3B8';
   ctx.fillRect(-s * 0.28, -s * 0.18, s * 0.28, s * 0.36);
   ctx.fillStyle = '#F59E0B';
   ctx.fillRect(0, -s * 0.26, s * 0.11, s * 0.52);
-  // Long Steel Blade with fuller highlight
   ctx.fillStyle = '#F8FAFC';
   ctx.beginPath();
   ctx.moveTo(s * 0.11, -s * 0.085);
@@ -198,7 +187,6 @@ function drawArmoredBattleClash(
   ctx.fill();
   ctx.restore();
 
-  // Clang Impact Sparks
   if (strike > 0.68) {
     ctx.strokeStyle = '#FEF08A';
     ctx.lineWidth = 1.3 / baseScale;
@@ -225,27 +213,35 @@ export function WorldMapCanvas({
   lang,
   selectedProvinceId,
   marchSourceProvinceId,
+  mapOverlayMode = 'political',
   onSelectProvince,
   onSelectCity,
+  onToggleStraitBlockade,
   activeBattles,
   perfMode,
   effectiveTier,
   onLowFpsDetected,
   focusTarget,
   fpsDomRef,
+  fpsCap = 'unlimited',
+  modalOpen = false,
 }: {
   state: GameState;
   lang: Language;
   selectedProvinceId: string | null;
   marchSourceProvinceId: string | null;
+  mapOverlayMode?: MapOverlayMode;
   onSelectProvince: (provinceId: string) => void;
   onSelectCity?: (cityId: string) => void;
+  onToggleStraitBlockade?: (straitId: StraitBlockadeId) => void;
   activeBattles: BattleEvent[];
   perfMode: PerformanceMode;
   effectiveTier: EffectiveTier;
   onLowFpsDetected?: () => void;
   focusTarget?: [number, number] | null;
   fpsDomRef?: React.RefObject<HTMLSpanElement | null>;
+  fpsCap?: FpsCap;
+  modalOpen?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -260,10 +256,22 @@ export function WorldMapCanvas({
       }).filter((item): item is { city: (typeof MAJOR_CITIES)[number]; wx: number; wy: number } => item !== null),
     [],
   );
+  const projectedStraits = useMemo(
+    () =>
+      STRATEGIC_STRAITS.map((s) => {
+        const pt = projectLonLat(s.lon, s.lat);
+        return pt ? { strait: s, wx: pt[0], wy: pt[1] } : null;
+      }).filter(
+        (item): item is { strait: (typeof STRATEGIC_STRAITS)[number]; wx: number; wy: number } =>
+          item !== null,
+      ),
+    [],
+  );
+
   const cityHitBoxesRef = useRef<Array<{ id: string; wx: number; wy: number; radius: number }>>([]);
+  const straitHitBoxesRef = useRef<Array<{ id: StraitBlockadeId; wx: number; wy: number; radius: number }>>([]);
   const hoveredCityIdRef = useRef<string | null>(null);
 
-  // Precompute subtle cartographic terrain grain pattern once
   const terrainPattern = useMemo(() => {
     if (typeof document === 'undefined') return null;
     const pCanvas = document.createElement('canvas');
@@ -367,16 +375,22 @@ export function WorldMapCanvas({
   const stateRef = useRef(state);
   const selectedRef = useRef(selectedProvinceId);
   const marchSrcRef = useRef(marchSourceProvinceId);
+  const overlayRef = useRef<MapOverlayMode>(mapOverlayMode);
   const battlesRef = useRef(activeBattles);
   const langRef = useRef(lang);
   const effectiveTierRef = useRef(effectiveTier);
+  const fpsCapRef = useRef(fpsCap);
+  const modalOpenRef = useRef(modalOpen);
 
   stateRef.current = state;
   selectedRef.current = selectedProvinceId;
   marchSrcRef.current = marchSourceProvinceId;
+  overlayRef.current = mapOverlayMode;
   battlesRef.current = activeBattles;
   langRef.current = lang;
   effectiveTierRef.current = effectiveTier;
+  fpsCapRef.current = fpsCap;
+  modalOpenRef.current = modalOpen;
   dirtyRef.current = true;
 
   useEffect(() => {
@@ -435,6 +449,7 @@ export function WorldMapCanvas({
     let frameCount = 0;
     let lastFpsTick = performance.now();
     let lastAnimDraw = 0;
+    let lastDrawDuration = 0;
     let lowFpsStrike = 0;
 
     const renderFrame = (now: number) => {
@@ -443,7 +458,7 @@ export function WorldMapCanvas({
       frameCount += 1;
       const elapsed = now - lastFpsTick;
       if (elapsed >= 500) {
-        const currentFps = Math.max(1, Math.min(60, Math.round((frameCount * 1000) / elapsed)));
+        const currentFps = Math.max(1, Math.round((frameCount * 1000) / elapsed));
         const fpsLabel = `${currentFps} FPS`;
         if (fpsDomRef?.current && frameCount >= 2) {
           fpsDomRef.current.textContent = fpsLabel;
@@ -464,28 +479,53 @@ export function WorldMapCanvas({
         lastFpsTick = now;
       }
 
+      if (modalOpenRef.current && !dirtyRef.current) {
+        return;
+      }
+
       const st = stateRef.current;
       const activeTier = effectiveTierRef.current;
+      const overlay = overlayRef.current;
       const nowMs = Date.now();
       const activeMissiles = st.recentMissiles.filter((m) => nowMs - m.createdAt < 4500);
-      const hasBattlesOrOrders =
-        battlesRef.current.length > 0 || st.orders.length > 0 || activeMissiles.length > 0;
+      const activePulses = (st.mapPulses ?? []).filter((p) => nowMs - p.createdAt < 4600);
+      const activeAirlifts = (st.airliftVisuals ?? []).filter((a) => nowMs - a.createdAt < 4800);
+      const activeSats = (st.activeSatellites ?? []).filter((s) => s.expiresDay >= st.totalDays);
+
+      const hasContinuousEffects =
+        battlesRef.current.length > 0 ||
+        st.orders.length > 0 ||
+        activeMissiles.length > 0 ||
+        activePulses.length > 0 ||
+        activeAirlifts.length > 0 ||
+        activeSats.length > 0 ||
+        overlay === 'logistics' ||
+        !st.simPaused;
       const hasActiveWars =
         activeTier !== 'light' &&
         Object.values(st.countries).some((c) => !c.eliminated && c.atWarWith.length > 0);
       const hasWaterAlerts = st.waterAlerts.length > 0;
+      const capMs = getFpsCapIntervalMs(fpsCapRef.current);
+      // On GPU/fast hardware drawMs <= 6ms -> effectiveCap = capMs (0 = uncapped native Hz).
+      // On software CPU rasterizers where a single draw takes > 6ms, yield briefly so UI & compositor stay responsive.
+      const cpuYieldMs =
+        capMs === 0 && lastDrawDuration > 6
+          ? Math.min(100, Math.max(80, lastDrawDuration * 3))
+          : capMs;
 
       if (!dirtyRef.current) {
-        if (hasBattlesOrOrders || !st.simPaused) {
-          if (now - lastAnimDraw < 34) return;
+        if (hasContinuousEffects) {
+          if (cpuYieldMs > 0 && now - lastAnimDraw < cpuYieldMs - 0.5) return;
         } else if (hasActiveWars || hasWaterAlerts) {
-          if (now - lastAnimDraw < 140) return;
+          const ambientStep = cpuYieldMs > 0 ? Math.max(120, cpuYieldMs) : 120;
+          if (now - lastAnimDraw < ambientStep) return;
         } else {
           return;
         }
       }
       lastAnimDraw = now;
       dirtyRef.current = false;
+      const frameStartPerf = performance.now();
 
       const dpr = Math.min(
         window.devicePixelRatio || 1,
@@ -495,10 +535,21 @@ export function WorldMapCanvas({
       const baseScale = Math.min(width / WORLD_WIDTH, height / WORLD_HEIGHT) * cam.zoom;
       const isSpectator = st.gameMode === 'bot_spectator';
 
+      // Zero-lag Viewport Culling Bounds in world space
+      const halfW = (width * 0.5) / baseScale;
+      const halfH = (height * 0.5) / baseScale;
+      const cullMargin = 48 / baseScale;
+      const viewMinX = cam.x - halfW - cullMargin;
+      const viewMaxX = cam.x + halfW + cullMargin;
+      const viewMinY = cam.y - halfH - cullMargin;
+      const viewMaxY = cam.y + halfH + cullMargin;
+      const inView = (x: number, y: number) =>
+        x >= viewMinX && x <= viewMaxX && y >= viewMinY && y <= viewMaxY;
+
       ctx.save();
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      // 1. Bathymetric Grand Strategy Deep Ocean (#050B18 -> #0A162D)
+      // 1. Bathymetric Imperial Deep Ocean (#03060E -> #0B1933)
       const oceanGrad = ctx.createRadialGradient(
         width * 0.5,
         height * 0.45,
@@ -507,9 +558,9 @@ export function WorldMapCanvas({
         height * 0.5,
         Math.max(width, height) * 0.78,
       );
-      oceanGrad.addColorStop(0, '#0C1830');
-      oceanGrad.addColorStop(0.7, '#060E1F');
-      oceanGrad.addColorStop(1, '#040812');
+      oceanGrad.addColorStop(0, overlay === 'thermal' ? '#091426' : '#0B1932');
+      oceanGrad.addColorStop(0.7, '#050C1B');
+      oceanGrad.addColorStop(1, '#03060E');
       ctx.fillStyle = oceanGrad;
       ctx.fillRect(0, 0, width, height);
 
@@ -517,22 +568,26 @@ export function WorldMapCanvas({
       ctx.scale(baseScale, baseScale);
       ctx.translate(-cam.x, -cam.y);
 
-      // Subtle cartographic graticule grid
-      ctx.strokeStyle = 'rgba(217, 159, 52, 0.055)';
+      // Subtle Bronze Meridian Graticule Grid (Viewport-clamped)
+      ctx.strokeStyle = 'rgba(234, 179, 8, 0.055)';
       ctx.lineWidth = 0.9 / baseScale;
       ctx.beginPath();
-      for (let gx = 0; gx <= WORLD_WIDTH; gx += 200) {
-        ctx.moveTo(gx, 0);
-        ctx.lineTo(gx, WORLD_HEIGHT);
+      const gxStart = Math.max(0, Math.floor(viewMinX / 200) * 200);
+      const gxEnd = Math.min(WORLD_WIDTH, Math.ceil(viewMaxX / 200) * 200);
+      const gyStart = Math.max(0, Math.floor(viewMinY / 200) * 200);
+      const gyEnd = Math.min(WORLD_HEIGHT, Math.ceil(viewMaxY / 200) * 200);
+      for (let gx = gxStart; gx <= gxEnd; gx += 200) {
+        ctx.moveTo(gx, gyStart);
+        ctx.lineTo(gx, gyEnd);
       }
-      for (let gy = 0; gy <= WORLD_HEIGHT; gy += 200) {
-        ctx.moveTo(0, gy);
-        ctx.lineTo(WORLD_WIDTH, gy);
+      for (let gy = gyStart; gy <= gyEnd; gy += 200) {
+        ctx.moveTo(gxStart, gy);
+        ctx.lineTo(gxEnd, gy);
       }
       ctx.stroke();
 
-      if (cachedPaths.antarcticaPath) {
-        ctx.fillStyle = '#152035';
+      if (cachedPaths.antarcticaPath && viewMaxY > WORLD_HEIGHT * 0.78) {
+        ctx.fillStyle = overlay === 'thermal' ? '#1E3A8A' : '#131F36';
         ctx.fill(cachedPaths.antarcticaPath);
       }
 
@@ -550,32 +605,19 @@ export function WorldMapCanvas({
       );
       const battleProvSet = new Set<string>(battlesRef.current.map((b) => b.provinceId));
 
-      // 2. Luminous Sea Lanes / Naval Corridors
-      if (highlightSrc || cam.zoom >= 1.4) {
+      // 2. Luminous Sea Lanes / Naval Corridors (Viewport culled)
+      if (highlightSrc || cam.zoom >= 1.4 || overlay === 'logistics') {
         ctx.save();
         ctx.setLineDash([6 / baseScale, 6 / baseScale]);
-        if (activeTier === 'ultra') {
-          ctx.strokeStyle = marchSrc ? 'rgba(56, 189, 248, 0.36)' : 'rgba(56, 189, 248, 0.13)';
-          ctx.lineWidth = (marchSrc ? 4.0 : 2.0) / baseScale;
-          ctx.beginPath();
-          for (const p of Object.values(st.provinces)) {
-            for (const sId of p.seaNeighbors) {
-              if (p.id < sId) {
-                const target = st.provinces[sId];
-                if (target && Math.abs(p.centroid[0] - target.centroid[0]) < 950) {
-                  ctx.moveTo(p.centroid[0], p.centroid[1]);
-                  ctx.lineTo(target.centroid[0], target.centroid[1]);
-                }
-              }
-            }
-          }
-          ctx.stroke();
-        }
-
-        ctx.strokeStyle = marchSrc ? 'rgba(125, 211, 252, 0.85)' : 'rgba(56, 189, 248, 0.25)';
-        ctx.lineWidth = (marchSrc ? 1.8 : 0.95) / baseScale;
+        ctx.strokeStyle = marchSrc
+          ? 'rgba(125, 211, 252, 0.85)'
+          : overlay === 'logistics'
+          ? 'rgba(56, 189, 248, 0.45)'
+          : 'rgba(56, 189, 248, 0.25)';
+        ctx.lineWidth = (marchSrc ? 1.85 : overlay === 'logistics' ? 1.3 : 0.95) / baseScale;
         ctx.beginPath();
         for (const p of Object.values(st.provinces)) {
+          if (!inView(p.centroid[0], p.centroid[1])) continue;
           for (const sId of p.seaNeighbors) {
             if (p.id < sId) {
               const target = st.provinces[sId];
@@ -590,40 +632,76 @@ export function WorldMapCanvas({
         ctx.restore();
       }
 
-      // 3. Political Map Provinces with Textured Topographic Relief & Dual Borders
+      // 3. Viewport-Culled Provinces (Political / Thermal °C / Logistics & Rail)
       const frontPulse = 0.55 + 0.45 * Math.sin(now * 0.005);
       const provList = mapData.provinces;
+      const visibleProvs: Array<(typeof st.provinces)[string]> = [];
+
       for (let i = 0; i < provList.length; i++) {
         const geom = provList[i];
+        const bb = cachedPaths.provBBoxes.get(geom.id);
+        if (
+          bb &&
+          (bb.maxX < viewMinX || bb.minX > viewMaxX || bb.maxY < viewMinY || bb.minY > viewMaxY)
+        ) {
+          continue; // Viewport culling: skip off-screen provinces!
+        }
+
         const path = cachedPaths.provPaths.get(geom.id);
         const provState = st.provinces[geom.id];
         if (!path || !provState) continue;
+        visibleProvs.push(provState);
 
         const owner = st.countries[provState.ownerId];
-        ctx.fillStyle = owner?.color ?? '#64748B';
-        ctx.globalAlpha = 0.86;
+        const tempC = provState.temperatureC ?? 14;
+        const hasRail = provState.buildings.includes('railway');
+        const hasPort = provState.buildings.includes('port');
+
+        if (overlay === 'thermal') {
+          ctx.fillStyle = temperatureToHex(tempC);
+          ctx.globalAlpha = 0.88;
+        } else if (overlay === 'logistics') {
+          ctx.fillStyle = hasRail
+            ? '#B45309'
+            : hasPort
+            ? '#0369A1'
+            : provState.ownerId === st.playerCountryId
+            ? '#1E293B'
+            : '#0F172A';
+          ctx.globalAlpha = 0.9;
+        } else {
+          ctx.fillStyle = owner?.color ?? '#64748B';
+          ctx.globalAlpha = 0.87;
+        }
         ctx.fill(path);
         ctx.globalAlpha = 1;
 
-        // Subtle alternating depth + cartographic texture grain (AoH3 atlas feel)
-        if (i % 2 === 1) {
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
-          ctx.fill(path);
+        if (overlay === 'political') {
+          if (i % 2 === 1) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
+            ctx.fill(path);
+          }
+          if (patternObj && activeTier !== 'light' && cam.zoom >= 1.8) {
+            ctx.fillStyle = patternObj;
+            ctx.fill(path);
+          }
         }
-        if (patternObj && activeTier !== 'light' && cam.zoom >= 1.8) {
-          ctx.fillStyle = patternObj;
+
+        // Nuclear devastation crater scorched tint
+        if ((provState.nuclearDevastation ?? 0) > 0) {
+          ctx.fillStyle = 'rgba(249, 115, 22, 0.24)';
           ctx.fill(path);
         }
 
-        if (activeTier === 'ultra') {
+        if (activeTier === 'ultra' && overlay !== 'thermal') {
           if (provState.weather === 'snow') {
-            ctx.fillStyle = 'rgba(224, 242, 254, 0.2)';
+            ctx.fillStyle = 'rgba(224, 242, 254, 0.19)';
             ctx.fill(path);
           } else if (provState.weather === 'rain') {
             ctx.fillStyle = 'rgba(15, 23, 42, 0.16)';
             ctx.fill(path);
           } else if (provState.weather === 'fog') {
-            ctx.fillStyle = 'rgba(203, 213, 225, 0.12)';
+            ctx.fillStyle = 'rgba(203, 213, 225, 0.11)';
             ctx.fill(path);
           }
         }
@@ -645,7 +723,7 @@ export function WorldMapCanvas({
           ctx.fill(path);
         }
         if (geom.id === selId) {
-          ctx.fillStyle = 'rgba(251, 191, 36, 0.28)';
+          ctx.fillStyle = 'rgba(250, 204, 21, 0.28)';
           ctx.fill(path);
         }
 
@@ -680,7 +758,7 @@ export function WorldMapCanvas({
           ctx.lineWidth = 2.0 / baseScale;
           ctx.stroke(path);
         } else {
-          ctx.strokeStyle = '#060A15';
+          ctx.strokeStyle = overlay === 'thermal' ? 'rgba(5, 9, 20, 0.72)' : '#050914';
           ctx.lineWidth = Math.max(0.55, 1.25 / Math.sqrt(cam.zoom));
           ctx.stroke(path);
         }
@@ -689,9 +767,126 @@ export function WorldMapCanvas({
       if (selId) {
         const selPath = cachedPaths.provPaths.get(selId);
         if (selPath) {
-          ctx.strokeStyle = '#FBBF24';
+          ctx.strokeStyle = '#FACC15';
           ctx.lineWidth = 2.6 / baseScale;
           ctx.stroke(selPath);
+        }
+      }
+
+      // 3b. Strategic Railways Track Network (always shown in Logistics view or when zoomed >= 2.2)
+      if (overlay === 'logistics' || cam.zoom >= 2.2) {
+        ctx.save();
+        for (const prov of visibleProvs) {
+          if (!prov.buildings.includes('railway')) continue;
+          for (const nId of prov.neighbors) {
+            if (prov.id >= nId) continue;
+            const np = st.provinces[nId];
+            if (!np || !np.buildings.includes('railway')) continue;
+            const [x1, y1] = prov.centroid;
+            const [x2, y2] = np.centroid;
+            ctx.strokeStyle = '#050914';
+            ctx.lineWidth = 3.6 / baseScale;
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+
+            ctx.strokeStyle = '#FACC15';
+            ctx.lineWidth = 1.6 / baseScale;
+            ctx.setLineDash([4 / baseScale, 3.5 / baseScale]);
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
+        }
+        ctx.restore();
+      }
+
+      // 3c. Animated Maritime Cargo Convoys (Logistics View or Sea Lanes zoomed >= 1.5)
+      if (overlay === 'logistics' || (activeTier !== 'light' && cam.zoom >= 1.5)) {
+        const convoyPulse = (now * 0.00028) % 1;
+        let convoyDrawn = 0;
+        for (const p of visibleProvs) {
+          if (!p.buildings.includes('port') && overlay !== 'logistics') continue;
+          if (convoyDrawn >= 14) break;
+          for (const sId of p.seaNeighbors) {
+            if (p.id >= sId) continue;
+            const target = st.provinces[sId];
+            if (!target || Math.abs(p.centroid[0] - target.centroid[0]) >= 900) continue;
+            convoyDrawn += 1;
+            const phase = (convoyPulse + convoyDrawn * 0.19) % 1;
+            const sx = p.centroid[0] + (target.centroid[0] - p.centroid[0]) * phase;
+            const sy = p.centroid[1] + (target.centroid[1] - p.centroid[1]) * phase;
+            if (!inView(sx, sy)) continue;
+            const sz = 4.2 / baseScale;
+            ctx.save();
+            ctx.translate(sx, sy);
+            ctx.rotate(Math.atan2(target.centroid[1] - p.centroid[1], target.centroid[0] - p.centroid[0]));
+            ctx.fillStyle = '#38BDF8';
+            ctx.strokeStyle = '#050914';
+            ctx.lineWidth = 0.8 / baseScale;
+            ctx.beginPath();
+            ctx.moveTo(sz, 0);
+            ctx.lineTo(-sz * 0.7, -sz * 0.45);
+            ctx.lineTo(-sz * 0.7, sz * 0.45);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+            break;
+          }
+        }
+      }
+
+      // 3d. Strategic Maritime Strait Blockade Nodes (clickable when in Logistics overlay)
+      straitHitBoxesRef.current = [];
+      const blockadedEntries = Object.keys(st.blockadedStraits ?? {});
+      if (overlay === 'logistics' || blockadedEntries.length > 0) {
+        for (const item of projectedStraits) {
+          const blockerId = st.blockadedStraits?.[item.strait.id];
+          const isBlockaded = Boolean(blockerId);
+          if (overlay !== 'logistics' && !isBlockaded) continue;
+          if (!inView(item.wx, item.wy)) continue;
+
+          const r = Math.max(3.5, 9 / baseScale);
+          straitHitBoxesRef.current.push({
+            id: item.strait.id,
+            wx: item.wx,
+            wy: item.wy,
+            radius: Math.max(6, 13 / baseScale),
+          });
+
+          ctx.save();
+          ctx.strokeStyle = isBlockaded ? '#F43F5E' : '#38BDF8';
+          ctx.lineWidth = 1.6 / baseScale;
+          ctx.setLineDash([3.5 / baseScale, 2.5 / baseScale]);
+          ctx.beginPath();
+          ctx.arc(item.wx, item.wy, r, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          ctx.fillStyle = isBlockaded ? 'rgba(244, 63, 94, 0.25)' : 'rgba(56, 189, 248, 0.16)';
+          ctx.beginPath();
+          ctx.arc(item.wx, item.wy, r, 0, Math.PI * 2);
+          ctx.fill();
+
+          if (cam.zoom >= 1.25 || overlay === 'logistics') {
+            const sFont = Math.max(2.8, 6.4 / Math.pow(cam.zoom, 0.75));
+            ctx.font = `800 ${sFont}px "JetBrains Mono", monospace`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            const lbl = isBlockaded
+              ? `⛔ ${item.strait.name[langRef.current]}`
+              : `⚓ ${item.strait.name[langRef.current]}`;
+            ctx.lineWidth = Math.max(0.6, 1.5 / baseScale);
+            ctx.strokeStyle = 'rgba(4, 8, 18, 0.95)';
+            ctx.strokeText(lbl, item.wx, item.wy + r + 1.5 / baseScale);
+            ctx.fillStyle = isBlockaded ? '#FDA4AF' : '#7DD3FC';
+            ctx.fillText(lbl, item.wx, item.wy + r + 1.5 / baseScale);
+          }
+          ctx.restore();
         }
       }
 
@@ -745,6 +940,8 @@ export function WorldMapCanvas({
             info.count > 1 && cId !== '643'
               ? info.y / info.count
               : info.capital?.[1] ?? info.y / info.count;
+          if (!inView(cx, cy)) continue;
+
           const labelText = (country.displayName || country.name[langRef.current]).toUpperCase();
           const flagW = labelFontSize * 1.42;
           const flagH = labelFontSize * 0.94;
@@ -770,17 +967,15 @@ export function WorldMapCanvas({
           ctx.fillStyle = cId === st.playerCountryId ? '#FEF08A' : '#FFFFFF';
           ctx.fillText(labelText, startX + flagW + 3 / baseScale, labelY);
 
-          // At macro zoom (< 2.0), show nation-level rectangular AoH3 [Flag | 83.0k] counter right beneath country label
-          if (cam.zoom < 2.0) {
+          if (cam.zoom < 2.0 && overlay !== 'thermal') {
             const totalArmy = getExactCountryArmy(st, cId);
             if (totalArmy > 0) {
               const isMe = cId === st.playerCountryId;
               const isWar = st.countries[st.playerCountryId]?.atWarWith.includes(cId);
               const isAlly = st.countries[st.playerCountryId]?.allies.includes(cId);
               const isSpied = country.spiedUntil >= st.turn;
-              const revealed = isSpectator || isMe || isAlly || isSpied;
               const borderCol = isMe
-                ? '#F59E0B'
+                ? '#EAB308'
                 : isWar
                 ? '#EF4444'
                 : isAlly
@@ -789,13 +984,12 @@ export function WorldMapCanvas({
                 ? '#38BDF8'
                 : 'rgba(203, 213, 225, 0.55)';
               const txtCol = isMe ? '#FDE68A' : '#F8FAFC';
-              const cLabel = revealed ? formatCounterTroops(totalArmy) : formatCounterTroops(totalArmy);
               const cBox = drawRectangularArmyCounter(
                 ctx,
                 cx,
                 labelY + flagH * 0.85,
                 country.flag,
-                cLabel,
+                formatCounterTroops(totalArmy),
                 borderCol,
                 txtCol,
                 Math.max(3.6, labelFontSize * 0.72),
@@ -807,11 +1001,11 @@ export function WorldMapCanvas({
         }
       }
 
-      // 5. Capital Golden Crowns, Province Labels & Authentic Rectangular [Flag | Troop] Counters
+      // 5. Capital Golden Crowns, Province Labels, °C Thermal Badges & Rectangular Counters
       if (cam.zoom >= 1.9) {
         const fontSize = Math.max(2.0, Math.min(7.8, 7.2 / Math.pow(cam.zoom, 0.84)));
 
-        const sortedProvs = Object.values(st.provinces).sort((a, b) => {
+        const sortedProvs = [...visibleProvs].sort((a, b) => {
           if (a.id === selId) return -1;
           if (b.id === selId) return 1;
           if (a.ownerId === st.playerCountryId && a.isCapital) return -1;
@@ -827,7 +1021,6 @@ export function WorldMapCanvas({
           const [cx, cy] = prov.centroid;
           const ownerCountry = st.countries[prov.ownerId];
 
-          // Golden Capital Star/Crown
           if (prov.isCapital) {
             const r = Math.max(1.4, 4.3 / baseScale);
             ctx.save();
@@ -871,23 +1064,47 @@ export function WorldMapCanvas({
               }
             }
             ctx.restore();
-          } else if (cam.zoom >= 4.5) {
-            ctx.font = `600 ${fontSize * 0.82}px "Plus Jakarta Sans", sans-serif`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            const pw = ctx.measureText(prov.name).width;
-            const ph = fontSize * 0.95;
-            const py = cy - 5.8 / baseScale;
-            const px1 = cx - pw * 0.5;
-            const py1 = py - ph * 0.5;
-            if (prov.id === selId || !overlapsPlaced(px1, py1, px1 + pw, py1 + ph)) {
-              placedBoxes.push({ x1: px1, y1: py1, x2: px1 + pw, y2: py1 + ph });
-              ctx.lineWidth = Math.max(0.5, 1.4 / baseScale);
-              ctx.strokeStyle = 'rgba(5, 9, 20, 0.94)';
-              ctx.strokeText(prov.name, cx, py);
-              ctx.fillStyle = '#E2E8F0';
-              ctx.fillText(prov.name, cx, py);
+          } else if (cam.zoom >= 4.7) {
+            const pbb = cachedPaths.provBBoxes.get(prov.id);
+            const screenProvW = pbb ? (pbb.maxX - pbb.minX) * baseScale : 60;
+            if (prov.id === selId || screenProvW >= 42) {
+              ctx.font = `600 ${fontSize * 0.8}px "Plus Jakarta Sans", sans-serif`;
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              const pw = ctx.measureText(prov.name).width;
+              const ph = fontSize * 0.95;
+              const pad = 3.2 / baseScale;
+              const py = cy - 5.8 / baseScale;
+              const px1 = cx - pw * 0.5 - pad;
+              const py1 = py - ph * 0.5 - pad * 0.5;
+              if (prov.id === selId || !overlapsPlaced(px1, py1, px1 + pw + pad * 2, py1 + ph + pad)) {
+                placedBoxes.push({ x1: px1, y1: py1, x2: px1 + pw + pad * 2, y2: py1 + ph + pad });
+                ctx.lineWidth = Math.max(0.5, 1.4 / baseScale);
+                ctx.strokeStyle = 'rgba(5, 9, 20, 0.94)';
+                ctx.strokeText(prov.name, cx, py);
+                ctx.fillStyle = '#E2E8F0';
+                ctx.fillText(prov.name, cx, py);
+              }
             }
+          }
+
+          if (overlay === 'thermal') {
+            const tC = Math.round(prov.temperatureC ?? 14);
+            const tLabel = `${tC}°C`;
+            const tFont = Math.max(2.3, fontSize * 0.92);
+            ctx.font = `800 ${tFont}px "JetBrains Mono", monospace`;
+            const tw = ctx.measureText(tLabel).width;
+            const th = tFont * 1.2;
+            const ty = cy + 3.5 / baseScale;
+            if (prov.id === selId || !overlapsPlaced(cx - tw * 0.5, ty, cx + tw * 0.5, ty + th)) {
+              placedBoxes.push({ x1: cx - tw * 0.5, y1: ty, x2: cx + tw * 0.5, y2: ty + th });
+              ctx.lineWidth = Math.max(0.6, 1.6 / baseScale);
+              ctx.strokeStyle = 'rgba(4, 8, 18, 0.96)';
+              ctx.strokeText(tLabel, cx, ty + th * 0.5);
+              ctx.fillStyle = tC <= -15 ? '#7DD3FC' : tC >= 38 ? '#FCA5A5' : '#FEF08A';
+              ctx.fillText(tLabel, cx, ty + th * 0.5);
+            }
+            continue;
           }
 
           // Rectangular AoH3 Army Counters [Mini Flag | 14.2k]
@@ -910,7 +1127,7 @@ export function WorldMapCanvas({
 
             if (prov.id === selId || !overlapsPlaced(bx1, badgeY, bx2, badgeY + estH)) {
               const borderCol = isPlayerProv
-                ? '#F59E0B'
+                ? '#EAB308'
                 : isWarProv
                 ? '#EF4444'
                 : isAllyProv
@@ -952,6 +1169,8 @@ export function WorldMapCanvas({
                   ? '#38BDF8'
                   : b === 'university'
                   ? '#818CF8'
+                  : b === 'railway'
+                  ? '#FACC15'
                   : b === 'coastal_defense'
                   ? '#22D3EE'
                   : b === 'missile_silo'
@@ -969,7 +1188,7 @@ export function WorldMapCanvas({
         }
       }
 
-      // 6. Real-Time Marching Armies & Naval Fleet Routes (progress-interpolated)
+      // 6. Real-Time Marching Armies, Armored Rail Trains & Naval Fleets
       const pulse = (now % 1200) / 1200;
       for (const order of st.orders) {
         const from = st.provinces[order.fromProvinceId];
@@ -977,13 +1196,22 @@ export function WorldMapCanvas({
         if (!from || !to) continue;
         const [x1, y1] = from.centroid;
         const [x2, y2] = to.centroid;
+        if (!inView(x1, y1) && !inView(x2, y2)) continue;
+
         const dx = x2 - x1;
         const dy = y2 - y1;
         const len = Math.hypot(dx, dy) || 1;
         const ux = dx / len;
         const uy = dy / len;
 
-        const color = order.isAttack ? '#EF4444' : order.isNaval ? '#38BDF8' : '#10B981';
+        const color = order.isRail
+          ? '#FACC15'
+          : order.isAttack
+          ? '#EF4444'
+          : order.isNaval
+          ? '#38BDF8'
+          : '#10B981';
+
         ctx.save();
         ctx.strokeStyle = 'rgba(5, 9, 20, 0.92)';
         ctx.lineWidth = 4.8 / baseScale;
@@ -1025,7 +1253,16 @@ export function WorldMapCanvas({
         ctx.save();
         ctx.translate(mx, my);
         ctx.rotate(angle);
-        if (order.isNaval) {
+        if (order.isRail) {
+          // Armored Train Locomotive Silhouette
+          ctx.fillStyle = '#FACC15';
+          ctx.strokeStyle = '#050914';
+          ctx.lineWidth = 1.1 / baseScale;
+          ctx.fillRect(-tokenSz * 1.1, -tokenSz * 0.42, tokenSz * 2.1, tokenSz * 0.84);
+          ctx.strokeRect(-tokenSz * 1.1, -tokenSz * 0.42, tokenSz * 2.1, tokenSz * 0.84);
+          ctx.fillStyle = '#1E293B';
+          ctx.fillRect(-tokenSz * 0.55, -tokenSz * 0.24, tokenSz * 0.9, tokenSz * 0.48);
+        } else if (order.isNaval) {
           ctx.strokeStyle = 'rgba(186, 230, 253, 0.72)';
           ctx.lineWidth = 1.4 / baseScale;
           ctx.beginPath();
@@ -1064,7 +1301,6 @@ export function WorldMapCanvas({
         }
         ctx.restore();
 
-        // Rectangular marching regiment strength counter next to moving token
         const ordCountry = st.countries[order.countryId];
         const ordTroops = getTotalUnits(order.units);
         if (ordCountry && ordTroops > 0) {
@@ -1074,7 +1310,7 @@ export function WorldMapCanvas({
             my + 7.5 / baseScale,
             ordCountry.flag,
             formatCounterTroops(ordTroops),
-            order.isAttack ? '#EF4444' : '#F59E0B',
+            order.isRail ? '#FACC15' : order.isAttack ? '#EF4444' : '#EAB308',
             '#FFFFFF',
             Math.max(2.6, 5.2 / Math.pow(cam.zoom, 0.78)),
             baseScale,
@@ -1083,9 +1319,10 @@ export function WorldMapCanvas({
         ctx.restore();
       }
 
-      // 6b. Active Maritime Water Alerts (Swirling Storm Rings)
+      // 6b. Active Maritime Water Alerts
       for (const alert of st.waterAlerts) {
         const [wx, wy] = alert.centroid;
+        if (!inView(wx, wy)) continue;
         const stormPhase = (now * 0.0022) % (Math.PI * 2);
         const r = (24 + 6 * Math.sin(now * 0.004)) / Math.sqrt(cam.zoom);
         ctx.save();
@@ -1106,47 +1343,41 @@ export function WorldMapCanvas({
         ctx.restore();
       }
 
-      // 6c. Ambient Warfront Jets & Muzzle Flashes (non-light tiers)
-      if (activeTier !== 'light') {
-        let jetCount = 0;
-        for (const prov of Object.values(st.provinces)) {
-          if (jetCount >= 6) break;
-          const owner = st.countries[prov.ownerId];
-          if (!owner || owner.atWarWith.length === 0) continue;
-          const enemyNeighborId = prov.neighbors.find((nId) => {
-            const np = st.provinces[nId];
-            return np && owner.atWarWith.includes(np.ownerId);
-          });
-          if (!enemyNeighborId) continue;
-          const enemyProv = st.provinces[enemyNeighborId];
-          if (!enemyProv) continue;
-          jetCount += 1;
+      // 6c. Orbital Spy Satellites (Sapphire Orbit & Radar Cone)
+      for (const sat of activeSats) {
+        const [tx, ty] = sat.centroid;
+        if (!inView(tx, ty)) continue;
+        const orbitAng = now * 0.0018;
+        const orbitR = 24 / baseScale;
+        const sx = tx + Math.cos(orbitAng) * orbitR;
+        const sy = ty - 14 / baseScale + Math.sin(orbitAng) * orbitR * 0.42;
 
-          const tJet = (now * 0.0005 + jetCount * 0.27) % 1;
-          const jx = prov.centroid[0] + (enemyProv.centroid[0] - prov.centroid[0]) * tJet;
-          const jy = prov.centroid[1] + (enemyProv.centroid[1] - prov.centroid[1]) * tJet;
-          const ang = Math.atan2(
-            enemyProv.centroid[1] - prov.centroid[1],
-            enemyProv.centroid[0] - prov.centroid[0],
-          );
-          const js = 6.5 / baseScale;
+        ctx.save();
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.18)';
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(tx - 16 / baseScale, ty);
+        ctx.lineTo(tx + 16 / baseScale, ty);
+        ctx.closePath();
+        ctx.fill();
 
-          ctx.save();
-          ctx.translate(jx, jy);
-          ctx.rotate(ang);
-          ctx.fillStyle = '#F8FAFC';
-          ctx.beginPath();
-          ctx.moveTo(js, 0);
-          ctx.lineTo(-js * 0.7, -js * 0.55);
-          ctx.lineTo(-js * 0.3, 0);
-          ctx.lineTo(-js * 0.7, js * 0.55);
-          ctx.closePath();
-          ctx.fill();
-          ctx.restore();
-        }
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.5)';
+        ctx.lineWidth = 0.9 / baseScale;
+        ctx.beginPath();
+        ctx.ellipse(tx, ty - 14 / baseScale, orbitR, orbitR * 0.42, 0, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Satellite solar wing body
+        const sz = 4.2 / baseScale;
+        ctx.fillStyle = '#38BDF8';
+        ctx.fillRect(sx - sz * 1.8, sy - sz * 0.35, sz * 1.1, sz * 0.7);
+        ctx.fillRect(sx + sz * 0.7, sy - sz * 0.35, sz * 1.1, sz * 0.7);
+        ctx.fillStyle = '#FACC15';
+        ctx.fillRect(sx - sz * 0.5, sy - sz * 0.5, sz, sz);
+        ctx.restore();
       }
 
-      // 6d. Ballistic & Nuclear Missile Trajectories + Orbital Shield Deflections
+      // 6d. Ballistic & Nuclear Missile Trajectories
       for (const m of activeMissiles) {
         const age = Math.min(1, (nowMs - m.createdAt) / 3600);
         const [fx, fy] = m.fromCentroid;
@@ -1192,9 +1423,60 @@ export function WorldMapCanvas({
         ctx.restore();
       }
 
-      // 7. Battle Clash Animation: Artillery Shock Ring + Twin Morale Bars + Two Armored Gauntlets
+      // 6e. Auto-Pilot 5-Second Strategic Airlift Vectors
+      for (const al of activeAirlifts) {
+        const age = Math.min(1, (nowMs - al.createdAt) / 4200);
+        const [fx, fy] = al.fromCentroid;
+        const [tx, ty] = al.toCentroid;
+        const dist = Math.hypot(tx - fx, ty - fy);
+        const midX = (fx + tx) * 0.5;
+        const midY = (fy + ty) * 0.5 - Math.max(24, dist * 0.28);
+        const flightT = Math.min(1, age * 1.45);
+        const invT = 1 - flightT;
+        const px = invT * invT * fx + 2 * invT * flightT * midX + flightT * flightT * tx;
+        const py = invT * invT * fy + 2 * invT * flightT * midY + flightT * flightT * ty;
+
+        ctx.save();
+        ctx.setLineDash([4.5 / baseScale, 4.5 / baseScale]);
+        ctx.strokeStyle = `rgba(34, 211, 238, ${0.85 * (1 - age * 0.6)})`;
+        ctx.lineWidth = 2.0 / baseScale;
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        ctx.quadraticCurveTo(midX, midY, tx, ty);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        if (flightT < 1) {
+          const dxdt = 2 * invT * (midX - fx) + 2 * flightT * (tx - midX);
+          const dydt = 2 * invT * (midY - fy) + 2 * flightT * (ty - midY);
+          const ang = Math.atan2(dydt, dxdt);
+          const js = 9.5 / baseScale;
+
+          ctx.translate(px, py);
+          ctx.rotate(ang);
+          ctx.fillStyle = '#22D3EE';
+          ctx.strokeStyle = '#050914';
+          ctx.lineWidth = 1.1 / baseScale;
+          ctx.beginPath();
+          ctx.moveTo(js * 1.15, 0);
+          ctx.lineTo(-js * 0.2, -js * 0.9);
+          ctx.lineTo(-js * 0.5, -js * 0.22);
+          ctx.lineTo(-js * 0.95, -js * 0.42);
+          ctx.lineTo(-js * 0.75, 0);
+          ctx.lineTo(-js * 0.95, js * 0.42);
+          ctx.lineTo(-js * 0.5, js * 0.22);
+          ctx.lineTo(-js * 0.2, js * 0.9);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      // 7. Battle Clash Animation
       for (const battle of battlesRef.current) {
         const [bx, by] = battle.centroid;
+        if (!inView(bx, by)) continue;
         const ringPhase = (now % 900) / 900;
         const ringRadius = (14 + ringPhase * 28) / baseScale;
         ctx.save();
@@ -1207,13 +1489,69 @@ export function WorldMapCanvas({
         drawArmoredBattleClash(ctx, bx, by, battle, now, baseScale);
       }
 
-      // 7b. Interactive Major City Pins for Free City Recon (when zoomed >= 2.1)
+      // 7a. Expanding Map Event Pulses
+      for (const pulseItem of activePulses) {
+        const [px, py] = pulseItem.centroid;
+        if (!inView(px, py)) continue;
+        const age = Math.min(1, (nowMs - pulseItem.createdAt) / 4200);
+        const alpha = Math.max(0, 1 - age);
+        const rgb =
+          pulseItem.kind === 'recruit'
+            ? '16, 185, 129'
+            : pulseItem.kind === 'airlift'
+            ? '34, 211, 238'
+            : pulseItem.kind === 'climate'
+            ? '251, 146, 60'
+            : pulseItem.kind === 'nuclear'
+            ? '249, 115, 22'
+            : pulseItem.kind === 'comeback'
+            ? '250, 204, 21'
+            : '244, 63, 94';
+
+        const r1 = (10 + age * 46) / baseScale;
+        const r2 = (4 + ((age * 1.45) % 1) * 32) / baseScale;
+
+        ctx.save();
+        ctx.fillStyle = `rgba(${rgb}, ${alpha * 0.16})`;
+        ctx.beginPath();
+        ctx.arc(px, py, r1 * 0.55, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = `rgba(${rgb}, ${alpha * 0.92})`;
+        ctx.lineWidth = 2.3 / baseScale;
+        ctx.beginPath();
+        ctx.arc(px, py, r1, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.strokeStyle = `rgba(${rgb}, ${alpha * 0.65})`;
+        ctx.lineWidth = 1.4 / baseScale;
+        ctx.beginPath();
+        ctx.arc(px, py, r2, 0, Math.PI * 2);
+        ctx.stroke();
+
+        if (pulseItem.label && cam.zoom >= 1.5) {
+          const pFont = Math.max(3.2, 7.6 / Math.pow(cam.zoom, 0.75));
+          ctx.font = `800 ${pFont}px "JetBrains Mono", monospace`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'bottom';
+          const ly = py - (10 + age * 14) / baseScale;
+          ctx.lineWidth = Math.max(0.7, 1.8 / baseScale);
+          ctx.strokeStyle = `rgba(4, 8, 18, ${alpha * 0.95})`;
+          ctx.strokeText(pulseItem.label, px, ly);
+          ctx.fillStyle = `rgba(${rgb}, ${alpha})`;
+          ctx.fillText(pulseItem.label, px, ly);
+        }
+        ctx.restore();
+      }
+
+      // 7b. Interactive Major City Pins
       cityHitBoxesRef.current = [];
       if (cam.zoom >= 2.1) {
         const hoveredCity = hoveredCityIdRef.current;
         const pinFont = Math.max(2.1, Math.min(7.2, 6.2 / Math.pow(cam.zoom, 0.8)));
         const r = Math.max(1.5, 4.4 / baseScale);
         for (const item of projectedCities) {
+          if (!inView(item.wx, item.wy)) continue;
           const isHovered = item.city.id === hoveredCity;
           const pinX = item.wx;
           const pinY = item.wy;
@@ -1226,15 +1564,13 @@ export function WorldMapCanvas({
           });
 
           ctx.save();
-          // Outer tactical beacon ring
           ctx.strokeStyle = isHovered ? '#FDE047' : 'rgba(56, 189, 248, 0.85)';
           ctx.lineWidth = (isHovered ? 1.5 : 0.95) / baseScale;
           ctx.beginPath();
           ctx.arc(pinX, pinY, r * (isHovered ? 1.45 : 1.15), 0, Math.PI * 2);
           ctx.stroke();
 
-          // City diamond core
-          ctx.fillStyle = isHovered ? '#F59E0B' : '#0EA5E9';
+          ctx.fillStyle = isHovered ? '#EAB308' : '#0EA5E9';
           ctx.strokeStyle = '#050914';
           ctx.lineWidth = 0.8 / baseScale;
           ctx.beginPath();
@@ -1261,9 +1597,9 @@ export function WorldMapCanvas({
         }
       }
 
-      // 8. Ultra Weather Screen-Space Particles & Drifting Clouds
       ctx.restore();
 
+      // 8. Ultra Weather Screen-Space Particles
       if (activeTier === 'ultra') {
         ctx.save();
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1288,17 +1624,9 @@ export function WorldMapCanvas({
             }
           }
         }
-
-        ctx.fillStyle = 'rgba(248, 250, 252, 0.03)';
-        for (let c = 0; c < 3; c++) {
-          const cx = ((tSec * (11 + c * 4) + c * 420) % (width + 360)) - 180;
-          const cy = 90 + c * 170;
-          ctx.beginPath();
-          ctx.ellipse(cx, cy, 140, 42, 0, 0, Math.PI * 2);
-          ctx.fill();
-        }
         ctx.restore();
       }
+      lastDrawDuration = performance.now() - frameStartPerf;
     };
 
     animId = requestAnimationFrame(renderFrame);
@@ -1306,7 +1634,7 @@ export function WorldMapCanvas({
       cancelAnimationFrame(animId);
       ro.disconnect();
     };
-  }, [cachedPaths, mapData, terrainPattern, perfMode, onLowFpsDetected, fpsDomRef]);
+  }, [cachedPaths, mapData, terrainPattern, perfMode, onLowFpsDetected, fpsDomRef, projectedCities, projectedStraits]);
 
   const screenToWorld = (clientX: number, clientY: number): [number, number] | null => {
     const canvas = canvasRef.current;
@@ -1403,6 +1731,14 @@ export function WorldMapCanvas({
     if (!drag.moved) {
       const pt = screenToWorld(e.clientX, e.clientY);
       if (pt) {
+        if (overlayRef.current === 'logistics' && onToggleStraitBlockade) {
+          for (const sHit of straitHitBoxesRef.current) {
+            if (Math.hypot(pt[0] - sHit.wx, pt[1] - sHit.wy) <= sHit.radius * 1.5) {
+              onToggleStraitBlockade(sHit.id);
+              return;
+            }
+          }
+        }
         if (camRef.current.zoom >= 2.1 && onSelectCity) {
           for (const cHit of cityHitBoxesRef.current) {
             if (Math.hypot(pt[0] - cHit.wx, pt[1] - cHit.wy) <= cHit.radius * 1.45) {
@@ -1465,7 +1801,7 @@ export function WorldMapCanvas({
   };
 
   return (
-    <div ref={containerRef} className="relative w-full h-full overflow-hidden bg-[#050914] select-none">
+    <div ref={containerRef} className="relative w-full h-full overflow-hidden bg-[#03060E] select-none">
       <canvas
         ref={canvasRef}
         data-testid="world-map-canvas"
@@ -1478,8 +1814,8 @@ export function WorldMapCanvas({
 
       {!fpsDomRef && <span ref={localFpsRef} className="sr-only">60 FPS</span>}
 
-      {/* Right-Edge Compact Camera & Zoom Cluster (keeps Left Rail 100% unobstructed) */}
-      <div className="pointer-events-auto absolute top-4 right-3 flex flex-col gap-1.5 z-10">
+      {/* Right-Edge Compact Camera & Zoom Cluster */}
+      <div className="pointer-events-auto absolute top-16 md:top-4 right-2.5 md:right-3 flex flex-col gap-1.5 z-10">
         <button
           type="button"
           onClick={() => adjustZoom(1.4)}

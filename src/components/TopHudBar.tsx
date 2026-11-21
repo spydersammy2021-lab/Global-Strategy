@@ -5,11 +5,15 @@ import {
   CloudRain,
   CloudSnow,
   Coins,
+  Cpu,
+  Flame,
   FlaskConical,
+  Globe2,
   HelpCircle,
   Home,
   Map as MapIcon,
   Pause,
+  Plane,
   Play,
   Radiation,
   Save,
@@ -17,6 +21,8 @@ import {
   Shield,
   Sun,
   Swords,
+  Thermometer,
+  TrainFront,
   Trophy,
   UserPlus,
   Volume2,
@@ -24,11 +30,13 @@ import {
   Waves,
 } from 'lucide-react';
 import type { CountrySummary } from '../game/combat';
+import type { FpsCap } from '../game/performance';
 import type {
   BlocksAccount,
   EffectiveTier,
   GameState,
   Language,
+  MapOverlayMode,
   SimSpeed,
   UiMode,
   WeatherKind,
@@ -61,11 +69,16 @@ export function TopHudBar({
   lang,
   muted,
   effectiveTier,
+  fpsCap = 'unlimited',
   uiMode,
+  mapOverlayMode = 'political',
+  autoPilotCountdownSec = null,
+  onChangeMapOverlay,
   onChangeUiMode,
   fpsDomRef,
   onToggleSimPause,
   onSetSimSpeed,
+  onToggleAutoPilot,
   onOpenBudgetDrawer,
   onOpenTechTree,
   onOpenLeaderboard,
@@ -85,11 +98,16 @@ export function TopHudBar({
   lang: Language;
   muted: boolean;
   effectiveTier: EffectiveTier;
+  fpsCap?: FpsCap;
   uiMode: UiMode;
+  mapOverlayMode?: MapOverlayMode;
+  autoPilotCountdownSec?: number | null;
+  onChangeMapOverlay?: (mode: MapOverlayMode) => void;
   onChangeUiMode: (mode: UiMode) => void;
   fpsDomRef: React.RefObject<HTMLSpanElement | null>;
   onToggleSimPause: () => void;
   onSetSimSpeed: (speed: SimSpeed) => void;
+  onToggleAutoPilot: () => void;
   onOpenBudgetDrawer: () => void;
   onOpenTechTree: () => void;
   onOpenLeaderboard: () => void;
@@ -114,6 +132,13 @@ export function TopHudBar({
   const activeWarsCount =
     Object.values(gameState.countries).reduce((acc, c) => acc + c.atWarWith.length, 0) >> 1;
   const waterAlertCount = gameState.waterAlerts.length;
+  const warming = Math.round(gameState.globalWarmingIndex ?? 24);
+  const warmingColor =
+    warming >= 70
+      ? 'border-rose-500/55 bg-rose-950/75 text-rose-300'
+      : warming >= 42
+      ? 'border-amber-500/50 bg-amber-950/60 text-amber-300'
+      : 'border-sky-500/40 bg-slate-950/85 text-sky-300';
 
   const tierLabel =
     effectiveTier === 'ultra'
@@ -127,7 +152,7 @@ export function TopHudBar({
       : 'LEK';
 
   return (
-    <div className="pointer-events-auto relative z-30 flex flex-col">
+    <div className="pointer-events-auto relative z-30 hidden md:flex flex-col">
       {isSpectator && (
         <div
           data-testid="bot-spectator-banner"
@@ -143,42 +168,41 @@ export function TopHudBar({
         </div>
       )}
 
-      <header className="flex flex-wrap xl:flex-nowrap items-center justify-between gap-2 px-2.5 py-1.5 border-b aoh-hud-bar">
-        {/* TOP-LEFT: Framed AoH3 National Flag + Compact Resource Strip */}
-        <div className="flex items-center gap-2.5 min-w-0">
+      <header className="flex flex-nowrap items-center justify-between gap-1.5 px-2 py-1 border-b aoh-hud-bar overflow-hidden">
+        {/* TOP-LEFT: Imperial Framed Flag + Resource Telemetry */}
+        <div className="flex items-center gap-2 min-w-0 shrink-0">
           {playerCountry && summary ? (
             <button
               type="button"
               onClick={onFocusCapital}
               title={playerCountry.displayName}
-              className="group relative flex items-center justify-center p-1 rounded border border-amber-400/60 bg-slate-950/90 shadow-md hover:border-amber-300 transition-colors cursor-pointer shrink-0"
+              className="group relative flex items-center justify-center p-0.5 rounded border border-amber-400/70 bg-slate-950/95 shadow-md hover:border-amber-300 transition-colors cursor-pointer shrink-0"
             >
-              <FlagBadge flag={playerCountry.flag} label={playerCountry.displayName} width={48} height={31} />
+              <FlagBadge flag={playerCountry.flag} label={playerCountry.displayName} width={42} height={27} />
             </button>
           ) : (
-            <div className="flex items-center justify-center w-12 h-8 rounded border border-sky-400/50 bg-sky-950/80 text-sky-300 shrink-0">
-              <Bot size={18} />
+            <div className="flex items-center justify-center w-11 h-7 rounded border border-sky-400/50 bg-sky-950/80 text-sky-300 shrink-0">
+              <Bot size={16} />
             </div>
           )}
 
           {playerCountry && summary ? (
-            <div className="flex flex-col min-w-0">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="font-display text-xs sm:text-sm font-extrabold text-white truncate max-w-[160px]">
+            <div className="flex flex-col min-w-0 shrink-0">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="font-display text-xs font-extrabold text-white truncate max-w-[110px]">
                   {playerCountry.displayName}
                 </span>
-                <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-mono-num text-slate-400 whitespace-nowrap">
+                <span className="hidden 2xl:inline-flex items-center gap-1 text-[10px] font-mono-num text-slate-400 whitespace-nowrap">
                   <MapIcon size={10} className="text-amber-400" />
                   {summary.areaKm2.toLocaleString(numberLocale)} km²
                 </span>
-                <span className="hidden md:inline-flex items-center gap-1 text-[10px] font-mono-num text-rose-300 font-bold whitespace-nowrap">
+                <span className="inline-flex items-center gap-1 text-[10px] font-mono-num text-rose-300 font-bold whitespace-nowrap">
                   <Swords size={10} className="text-rose-400" />
                   {summary.totalArmy.toLocaleString(numberLocale)}
                 </span>
               </div>
 
-              {/* Sleek AoH3 Resource Strip (no candy pills, crisp hairline dividers) */}
-              <div className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] font-mono-num">
+              <div className="mt-0.5 flex flex-nowrap items-center gap-x-1.5 text-[10.5px] font-mono-num whitespace-nowrap">
                 <button
                   type="button"
                   data-testid="treasury-button"
@@ -186,13 +210,9 @@ export function TopHudBar({
                   title={`${t.treasuryModalTitle} (${t.taxRateLabel}: ${playerCountry.taxRate}%)`}
                   className="inline-flex items-center gap-1 text-amber-300 hover:text-amber-200 font-bold cursor-pointer whitespace-nowrap"
                 >
-                  <Coins size={12} className="text-amber-400 shrink-0" />
+                  <Coins size={11} className="text-amber-400 shrink-0" />
                   <span>{playerCountry.treasury.toFixed(1)} PLN</span>
-                  <span
-                    className={`text-[10px] ${
-                      summary.incomePerTurn >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                    }`}
-                  >
+                  <span className={summary.incomePerTurn >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
                     ({summary.incomePerTurn >= 0 ? '+' : ''}
                     {summary.incomePerTurn.toFixed(1)})
                   </span>
@@ -200,7 +220,7 @@ export function TopHudBar({
 
                 <span className="text-slate-700">|</span>
 
-                <span className="inline-flex items-center gap-1 text-emerald-300 font-bold whitespace-nowrap" title={t.manpowerLabel}>
+                <span className="inline-flex items-center gap-0.5 text-emerald-300 font-bold whitespace-nowrap" title={t.manpowerLabel}>
                   <UserPlus size={11} className="text-emerald-400 shrink-0" />
                   {Math.round(summary.manpower / 1000)}k
                 </span>
@@ -212,7 +232,7 @@ export function TopHudBar({
                   data-testid="tech-tree-btn"
                   onClick={onOpenTechTree}
                   title={t.research}
-                  className="inline-flex items-center gap-1 text-sky-300 hover:text-sky-200 font-bold cursor-pointer whitespace-nowrap"
+                  className="inline-flex items-center gap-0.5 text-sky-300 hover:text-sky-200 font-bold cursor-pointer whitespace-nowrap"
                 >
                   <FlaskConical size={11} className="text-sky-400 shrink-0" />
                   <span>{Math.round(playerCountry.researchPoints)} RP</span>
@@ -220,33 +240,23 @@ export function TopHudBar({
 
                 {uiMode !== 'very_easy' && (
                   <>
-                    <span className="text-slate-700 hidden sm:inline">|</span>
-                    <span className="hidden sm:inline-flex items-center gap-1 text-slate-200 font-bold whitespace-nowrap" title={t.stability}>
+                    <span className="text-slate-700">|</span>
+                    <span
+                      data-testid="stability-stat"
+                      className="inline-flex items-center gap-0.5 text-slate-100 font-bold whitespace-nowrap"
+                      title={t.stability}
+                    >
                       <Shield size={11} className="text-amber-400 shrink-0" />
                       {playerCountry.stability}%
                     </span>
-                    <span className="text-slate-700 hidden lg:inline">|</span>
-                    <span className="hidden lg:inline-flex items-center gap-2 text-[10px] text-slate-300 whitespace-nowrap">
+                    <span className="text-slate-700 hidden 2xl:inline">|</span>
+                    <span className="hidden 2xl:inline-flex items-center gap-1.5 text-[10px] text-slate-300 whitespace-nowrap">
                       <span className="text-sky-300 font-bold">
-                        {t.diplomacyPts}: {playerCountry.diplomacyPoints}/{playerCountry.maxDiplomacyPoints}
+                        {t.diplomacyPts}:{playerCountry.diplomacyPoints}/{playerCountry.maxDiplomacyPoints}
                       </span>
                       <span className="text-amber-300 font-bold">
-                        {t.movementPts}: {playerCountry.movementPoints}/{playerCountry.maxMovementPoints}
+                        {t.movementPts}:{playerCountry.movementPoints}/{playerCountry.maxMovementPoints}
                       </span>
-                    </span>
-                  </>
-                )}
-
-                {uiMode === 'hard' && (
-                  <>
-                    <span className="text-slate-700 hidden xl:inline">|</span>
-                    <span className="hidden xl:inline-flex items-center gap-1.5 text-[10px] text-emerald-300 font-bold whitespace-nowrap">
-                      <span>
-                        M{playerCountry.tech.military}/E{playerCountry.tech.economy}/L{playerCountry.tech.logistics}
-                      </span>
-                      {playerCountry.nuclearWarheads > 0 && (
-                        <span className="text-rose-400">☢️{playerCountry.nuclearWarheads}</span>
-                      )}
                     </span>
                   </>
                 )}
@@ -264,32 +274,118 @@ export function TopHudBar({
           )}
         </div>
 
-        {/* TOP-RIGHT: Real-Time Clock + Speed Bar + UI Mode + FPS & Tier + Compact Utility Icons */}
-        <div className="flex flex-wrap items-center gap-1.5 w-full xl:w-auto min-w-0 justify-between xl:justify-end">
-          {/* Date & Speed Controls */}
-          <div className="flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-slate-950/90 px-2.5 py-1">
+        {/* TOP-RIGHT: Map Views + Warming + Auto-Pilot & 5s Countdown + Clock + Uncapped FPS + Tools */}
+        <div className="flex flex-nowrap items-center gap-1 shrink-0 justify-end">
+          {/* Map View Mode Switcher (Political / Thermal °C / Rail & Trade) */}
+          {onChangeMapOverlay && (
+            <div className="flex items-center rounded-lg border border-slate-800 bg-slate-950/90 p-0.5 text-[10px] font-bold">
+              <button
+                type="button"
+                data-testid="map-overlay-political"
+                onClick={() => onChangeMapOverlay('political')}
+                title={t.politicalView}
+                className={`inline-flex items-center gap-1 px-1.5 py-1 rounded cursor-pointer whitespace-nowrap ${
+                  mapOverlayMode === 'political'
+                    ? 'bg-amber-400 text-slate-950'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                <Globe2 size={11} />
+                <span className="hidden 2xl:inline">{t.politicalView}</span>
+              </button>
+              <button
+                type="button"
+                data-testid="map-overlay-thermal"
+                onClick={() => onChangeMapOverlay('thermal')}
+                title={t.thermalView}
+                className={`inline-flex items-center gap-1 px-1.5 py-1 rounded cursor-pointer whitespace-nowrap ${
+                  mapOverlayMode === 'thermal'
+                    ? 'bg-orange-400 text-slate-950'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                <Flame size={11} />
+                <span className="hidden 2xl:inline">{t.thermalView}</span>
+              </button>
+              <button
+                type="button"
+                data-testid="map-overlay-logistics"
+                onClick={() => onChangeMapOverlay('logistics')}
+                title={t.logisticsView}
+                className={`inline-flex items-center gap-1 px-1.5 py-1 rounded cursor-pointer whitespace-nowrap ${
+                  mapOverlayMode === 'logistics'
+                    ? 'bg-sky-400 text-slate-950'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                <TrainFront size={11} />
+                <span className="hidden 2xl:inline">{t.logisticsView}</span>
+              </button>
+            </div>
+          )}
+
+          {/* Global Warming Index Gauge */}
+          <div
+            data-testid="global-warming-index"
+            title={`${t.globalWarmingLabel}: ${warming}/100`}
+            className={`inline-flex items-center gap-1 px-1.5 py-1 rounded border text-[10px] font-mono-num font-bold whitespace-nowrap ${warmingColor}`}
+          >
+            <Thermometer size={11} className="shrink-0" />
+            <span>{warming}</span>
+          </div>
+
+          {/* 1-Click Auto-Pilot + 5s War Airlift Countdown */}
+          {!isSpectator && (
+            <button
+              type="button"
+              data-testid="autopilot-toggle-btn"
+              onClick={onToggleAutoPilot}
+              title={t.autoPilotToggle}
+              className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border text-[10px] font-bold transition-colors cursor-pointer whitespace-nowrap ${
+                gameState.autoPilotEnabled
+                  ? 'border-cyan-400 bg-cyan-500/20 text-cyan-200 shadow-[0_0_12px_rgba(34,211,238,0.3)]'
+                  : 'border-slate-700 bg-slate-950/90 text-slate-300 hover:border-cyan-400/60 hover:text-white'
+              }`}
+            >
+              <Cpu size={12} className={gameState.autoPilotEnabled ? 'text-cyan-300' : 'text-slate-400'} />
+              <span>{gameState.autoPilotEnabled ? t.autoPilotActive : t.autoPilotToggle}</span>
+            </button>
+          )}
+
+          {gameState.autoPilotEnabled && autoPilotCountdownSec !== null && autoPilotCountdownSec > 0 && (
             <div
-              className="text-right pr-2 border-r border-slate-800 whitespace-nowrap"
+              data-testid="autopilot-countdown"
+              className="inline-flex items-center gap-1 px-1.5 py-1 rounded-lg border border-cyan-400/60 bg-cyan-950/85 text-[10px] font-mono-num font-bold text-cyan-200 whitespace-nowrap animate-pulse"
+            >
+              <Plane size={10} className="text-cyan-300 shrink-0" />
+              <span>{t.autoPilotAirliftingCountdown.replace('{s}', String(autoPilotCountdownSec))}</span>
+            </div>
+          )}
+
+          {/* Date & Speed Controls */}
+          <div className="flex items-center gap-1.5 rounded-lg border border-amber-500/35 bg-slate-950/95 px-2 py-1">
+            <div
+              className="text-right pr-1.5 border-r border-slate-800 whitespace-nowrap"
               title={`${seasonName} · ${weatherLabel}`}
             >
               <div
                 data-testid="sim-date-clock"
-                className="text-xs font-bold text-white font-mono-num leading-tight"
+                className="text-[11px] font-bold text-white font-mono-num leading-tight"
               >
                 {dayStr} {monthShort} {gameState.year}
               </div>
-              <div className="text-[9.5px] text-amber-300 font-mono-num flex items-center justify-end gap-1">
+              <div className="text-[9px] text-amber-300 font-mono-num flex items-center justify-end gap-1">
                 <WeatherIcon weather={capitalWeather} />
                 <span>{seasonName}</span>
                 {waterAlertCount > 0 && (
                   <span className="inline-flex items-center gap-0.5 text-sky-300" title="Maritime Water Alerts">
-                    <Waves size={10} />
+                    <Waves size={9} />
                     {waterAlertCount}
                   </span>
                 )}
                 {gameState.nuclearWinterLevel > 0 && (
                   <span className="inline-flex items-center gap-0.5 text-rose-400" title="Nuclear Winter">
-                    <Radiation size={10} />
+                    <Radiation size={9} />
                     {gameState.nuclearWinterLevel}%
                   </span>
                 )}
@@ -309,7 +405,7 @@ export function TopHudBar({
                 }`}
               >
                 <Pause size={10} />
-                <span className="hidden sm:inline">{t.speedPaused}</span>
+                <span className="hidden 2xl:inline">{t.speedPaused}</span>
               </button>
 
               {SPEED_OPTIONS.map((sp) => {
@@ -344,18 +440,21 @@ export function TopHudBar({
               onChangeUiMode(next);
             }}
             title={t.uiModeLabel}
-            className="hidden sm:inline-flex items-center px-2 py-1.5 rounded-lg border border-slate-800 bg-slate-950/90 hover:border-amber-400/60 text-[10px] font-bold text-slate-200 cursor-pointer whitespace-nowrap"
+            className="hidden 2xl:inline-flex items-center px-2 py-1 rounded-lg border border-slate-800 bg-slate-950/90 hover:border-amber-400/60 text-[10px] font-bold text-slate-200 cursor-pointer whitespace-nowrap"
           >
             {uiMode === 'very_easy' ? t.uiVeryEasy : uiMode === 'easy' ? t.uiEasy : t.uiHard}
           </button>
 
-          {/* Live FPS Counter + Hardware Tier */}
+          {/* Live Uncapped FPS Counter + Cap Readout */}
           <div
             data-testid="fps-counter"
-            className="hidden sm:flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-slate-800 bg-slate-950/90 text-[10.5px] font-mono-num font-bold text-emerald-400 whitespace-nowrap"
+            className="flex items-center gap-1 px-1.5 py-1 rounded-lg border border-slate-800 bg-slate-950/90 text-[10px] font-mono-num font-bold text-emerald-400 whitespace-nowrap"
           >
             <span ref={fpsDomRef}>60 FPS</span>
-            <span className="text-[9px] text-sky-300 border-l border-slate-800 pl-1.5">
+            <span className="text-[9px] text-cyan-300 border-l border-slate-800 pl-1">
+              {fpsCap === 'unlimited' ? '∞ Hz' : `${fpsCap}`}
+            </span>
+            <span className="hidden 2xl:inline text-[9px] text-sky-300 border-l border-slate-800 pl-1">
               {tierLabel}
             </span>
           </div>
@@ -404,9 +503,10 @@ export function TopHudBar({
           <button
             type="button"
             onClick={onOpenSettings}
+            data-testid="hud-settings-btn"
             aria-label={t.settings}
             title={t.settings}
-            className="p-1.5 rounded-lg border border-slate-800 bg-slate-950/90 hover:border-slate-600 text-slate-300 hover:text-white cursor-pointer"
+            className="p-1.5 rounded-lg border border-slate-800 bg-slate-950/90 hover:border-amber-400/50 text-slate-300 hover:text-white cursor-pointer"
           >
             <Settings size={14} />
           </button>
@@ -414,10 +514,12 @@ export function TopHudBar({
           <button
             type="button"
             onClick={onOpenAccount}
-            className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-amber-500/35 bg-slate-950/90 hover:border-amber-400 text-xs font-semibold text-amber-200 whitespace-nowrap cursor-pointer"
+            aria-label={account.isGuest ? t.accountBtn : account.nickname}
+            title={account.isGuest ? t.accountBtn : account.nickname}
+            className="hidden xl:inline-flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-amber-500/35 bg-slate-950/90 hover:border-amber-400 text-xs font-semibold text-amber-200 whitespace-nowrap cursor-pointer"
           >
             <AvatarIcon avatarId={account.avatarId} size={13} />
-            <span className="max-w-[115px] truncate">
+            <span className="hidden 2xl:inline max-w-[115px] truncate">
               {account.isGuest ? t.accountBtn : account.nickname}
             </span>
           </button>

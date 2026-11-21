@@ -1,4 +1,43 @@
-import type { CommodityId, Language, MegaprojectId, MinisterChoice, TechNodeId } from '../game/types';
+import type { CommodityId, Language, MegaprojectId, MinisterChoice, StraitBlockadeId, TechNodeId } from '../game/types';
+
+export interface StrategicStraitDef {
+  id: StraitBlockadeId;
+  name: Record<Language, string>;
+  lon: number;
+  lat: number;
+  tradeShareLabel: string;
+}
+
+export const STRATEGIC_STRAITS: StrategicStraitDef[] = [
+  {
+    id: 'baltic',
+    name: { en: 'Danish & Baltic Straits', pl: 'Cieśniny Bałtyckie', szl: 'Ciyśniny Bałtycke', csb: 'Bôłtëcczé Cesninë' },
+    lon: 11.8,
+    lat: 55.6,
+    tradeShareLabel: '-35% Baltic Trade',
+  },
+  {
+    id: 'gibraltar',
+    name: { en: 'Strait of Gibraltar', pl: 'Cieśnina Gibraltarska', szl: 'Gibraltar', csb: 'Gibraltar' },
+    lon: -5.6,
+    lat: 35.95,
+    tradeShareLabel: '-35% Atlantic–Med Trade',
+  },
+  {
+    id: 'suez',
+    name: { en: 'Suez Canal & Red Sea', pl: 'Kanał Sueski', szl: 'Kanał Sueski', csb: 'Suesczi Kanał' },
+    lon: 32.55,
+    lat: 30.0,
+    tradeShareLabel: '-35% Indo-Euro Trade',
+  },
+  {
+    id: 'malacca',
+    name: { en: 'Strait of Malacca', pl: 'Cieśnina Malakka', szl: 'Malakka', csb: 'Malakka' },
+    lon: 101.2,
+    lat: 2.5,
+    tradeShareLabel: '-35% Indo-Pacific Trade',
+  },
+];
 
 export type SpaceOceanStageId =
   | 'earth_orbit'

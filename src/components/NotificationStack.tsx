@@ -14,21 +14,31 @@ function TimedNotificationItem({
   const [remainingMs, setRemainingMs] = useState(8500);
   const [paused, setPaused] = useState(false);
   const pausedRef = useRef(false);
-  pausedRef.current = paused;
+  const onDismissRef = useRef(onDismiss);
+  const dismissedRef = useRef(false);
+
+  useEffect(() => {
+    pausedRef.current = paused;
+  }, [paused]);
+
+  useEffect(() => {
+    onDismissRef.current = onDismiss;
+  }, [onDismiss]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
       if (pausedRef.current) return;
-      setRemainingMs((prev) => {
-        if (prev <= 100) {
-          onDismiss(notif.id);
-          return 0;
-        }
-        return prev - 100;
-      });
+      setRemainingMs((prev) => Math.max(0, prev - 100));
     }, 100);
     return () => window.clearInterval(interval);
-  }, [notif.id, onDismiss]);
+  }, []);
+
+  useEffect(() => {
+    if (remainingMs <= 0 && !dismissedRef.current) {
+      dismissedRef.current = true;
+      onDismissRef.current(notif.id);
+    }
+  }, [remainingMs, notif.id]);
 
   const borderStyle =
     notif.type === 'war' || notif.type === 'defeat'

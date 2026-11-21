@@ -358,6 +358,21 @@ export const MAJOR_CITIES: MajorCity[] = [
     },
   },
   {
+    id: 'nuuk',
+    name: 'Nuuk',
+    countryCode: '304',
+    provinceId: '304_p0',
+    lat: 64.1814,
+    lng: -51.6941,
+    populationLabel: '20K',
+    strategicRole: {
+      en: 'Greenlandic Arctic Command & North Atlantic Gateway',
+      pl: 'Arktyczne Dowództwo Grenlandii i Brama Północna',
+      szl: 'Arktyczne Dowōdztwo Grynlandyje',
+      csb: 'Arkticzné Dowództwò Grenlandii',
+    },
+  },
+  {
     id: 'canberra',
     name: 'Canberra',
     countryCode: '036',

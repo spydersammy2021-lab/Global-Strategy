@@ -21,22 +21,30 @@ import {
   constructBuilding,
   createNewGame,
   deploySpy,
+  designCustomUnit,
   executeBlackOp,
   executeTurn,
   fundSpaceOceanColony,
   issueArmyOrder,
+  launchSpySatellite,
   launchStrategicStrike,
   planTechTreePath,
   proposeDiplomacy,
+  reconstructProvinceCity,
   recruitUnits,
   repayLoan,
   researchTechNode,
   resolveRandomEvent,
   setTaxRate,
   takeBankLoan,
+  toggleAutoPilot,
+  toggleStraitBlockade,
   tradeMarketResource,
+  triggerAutoPilotAirliftNow,
   voteWorldCouncil,
 } from './engine';
+import { getDifficultyConfig } from '../data/scenarios';
+import { runAutoPilotCommand } from './ai';
 import {
   MAJOR_CITIES,
   getEsriTileUrl,
@@ -44,7 +52,8 @@ import {
   latLngToEsriTile,
 } from '../data/cities';
 import { buildWorldMapData, projectLonLat } from './mapGen';
-import { resolveEffectiveTier } from './performance';
+import { getFpsCapIntervalMs, resolveEffectiveTier } from './performance';
+import { getExtremeClimateAttrition, temperatureToHex } from './weather';
 
 test('World map contains all 18 mandatory countries as clickable provinces', () => {
   const map = buildWorldMapData();
@@ -143,14 +152,23 @@ test('Scenario 966 (Chrzest Polski) initializes Mieszko I, medieval year, and hi
   assert.equal(polProv.units.tanks ?? 0, 0);
 });
 
-test('5 Difficulty levels scale player income/attack and AI defense/economy accurately', () => {
-  const veryEasy = createNewGame('2026', '616', 'very_easy', 'pl');
-  const normal = createNewGame('2026', '616', 'normal', 'pl');
-  const extreme = createNewGame('2026', '616', 'extreme', 'pl');
+test('8 Difficulty tiers scale player income/attack, AI defense/economy, and map legacy saves safely', () => {
+  const extEasy = createNewGame('2026', '616', 'extremely_easy', 'en');
+  const extEasyPlus = createNewGame('2026', '616', 'extremely_easy_plus', 'en');
+  const normal = createNewGame('2026', '616', 'normal', 'en');
+  const autoPilot = createNewGame('2026', '616', 'auto_pilot', 'en');
 
-  const veBudget = computeDetailedBudget(veryEasy, '616');
+  assert.equal(autoPilot.autoPilotEnabled, true);
+  assert.equal(normal.autoPilotEnabled, false);
+  assert.equal(getDifficultyConfig('very_easy').id, 'extremely_easy');
+  assert.equal(getFpsCapIntervalMs('unlimited'), 0);
+  assert.ok(Math.abs(getFpsCapIntervalMs(144) - 1000 / 144) < 0.01);
+
+  const eeBudget = computeDetailedBudget(extEasy, '616');
+  const eepBudget = computeDetailedBudget(extEasyPlus, '616');
   const normBudget = computeDetailedBudget(normal, '616');
-  assert.ok(veBudget.taxIncome > normBudget.taxIncome * 1.4);
+  assert.ok(eeBudget.taxIncome > normBudget.taxIncome * 1.9);
+  assert.ok(eepBudget.taxIncome > normBudget.taxIncome * 2.1);
 
   const gerNormPower = computeArmyPower({ infantry: 10000 }, '2026', 'defense', 0, {
     difficulty: 'normal',
@@ -160,17 +178,17 @@ test('5 Difficulty levels scale player income/attack and AI defense/economy accu
     difficulty: 'extreme',
     isPlayerSide: false,
   });
-  assert.ok(Math.abs(gerExtPower / gerNormPower - 1.4) < 0.01);
+  assert.ok(Math.abs(gerExtPower / gerNormPower - 1.35) < 0.01);
 
-  const plVeAtk = computeArmyPower({ infantry: 10000 }, '2026', 'attack', 0, {
-    difficulty: 'very_easy',
+  const plEeAtk = computeArmyPower({ infantry: 10000 }, '2026', 'attack', 0, {
+    difficulty: 'extremely_easy',
     isPlayerSide: true,
   });
   const plNormAtk = computeArmyPower({ infantry: 10000 }, '2026', 'attack', 0, {
     difficulty: 'normal',
     isPlayerSide: true,
   });
-  assert.ok(Math.abs(plVeAtk / plNormAtk - 1.3) < 0.01);
+  assert.ok(Math.abs(plEeAtk / plNormAtk - 1.5) < 0.01);
 });
 
 test('Weather modifiers give +25% defense & extra march cost in snow, and -15% armor/air in rain', () => {
@@ -612,7 +630,7 @@ test('EXTREME+ difficulty enforces +75% AI economy, +55% AI defense, and global 
 
   const gerNormTax = computeDetailedBudget(normal, '276').taxIncome;
   const gerExtPlusTax = computeDetailedBudget(extPlus, '276').taxIncome;
-  assert.ok(Math.abs(gerExtPlusTax / gerNormTax - 1.75) < 0.05);
+  assert.ok(Math.abs(gerExtPlusTax / gerNormTax - 1.85) < 0.05);
 
   for (let d = 0; d < 12; d++) {
     extPlus = advanceDay(extPlus, 'en');
@@ -710,4 +728,232 @@ test('City Recon dataset maps Warsaw and Jastrzębie-Zdrój accurately with zero
   const streetUrl = getGoogleMapsStreetViewUrl(jastrzebie.lat, jastrzebie.lng);
   assert.ok(streetUrl.includes('map_action=pano'));
   assert.ok(!streetUrl.includes('key='));
+});
+
+test('Sandbox 2026 scenario has zero initial wars/alliances and Greenland (304) + Nuuk are playable', () => {
+  const state = createNewGame('sandbox', '304', 'normal', 'en');
+  assert.equal(state.scenarioId, 'sandbox');
+  assert.ok(state.countries['304'], 'Greenland (304) must exist in world atlas');
+  assert.ok(
+    Object.values(state.provinces).some((p) => p.ownerId === '304'),
+    'Greenland (304) must have clickable provinces',
+  );
+  assert.equal(
+    Object.values(state.countries).some((c) => c.atWarWith.length > 0),
+    false,
+    'Sandbox should start with zero forced wars',
+  );
+  assert.equal(
+    Object.values(state.countries).some((c) => c.allies.length > 0),
+    false,
+    'Sandbox should start with zero forced alliances',
+  );
+  const nuuk = MAJOR_CITIES.find((c) => c.id === 'nuuk');
+  assert.ok(nuuk && nuuk.countryCode === '304', 'Nuuk should be mapped to Greenland 304');
+});
+
+test('Auto-Pilot mid-game toggle, 5-second rapid airlift unit conservation, and map pulses work cleanly', () => {
+  let state = createNewGame('2026', '616', 'normal', 'en');
+  assert.equal(state.autoPilotEnabled, false);
+  state = toggleAutoPilot(state);
+  assert.equal(state.autoPilotEnabled, true);
+
+  // Give rear province large garrison & frontline province small garrison to verify honest airlift transfer
+  const polProvs = Object.values(state.provinces).filter((p) => p.ownerId === '616');
+  const rear = polProvs.find((p) =>
+    p.neighbors.every((nId) => state.provinces[nId]?.ownerId === '616'),
+  ) ?? polProvs[0];
+  const front = polProvs.find(
+    (p) => p.id !== rear.id && p.neighbors.some((nId) => state.provinces[nId]?.ownerId !== '616'),
+  ) ?? polProvs[1];
+  rear.units = { infantry: 30000 };
+  front.units = { infantry: 2000 };
+
+  const armyBefore = getExactCountryArmy(state, '616');
+  const airliftRes = triggerAutoPilotAirliftNow(state, 'en');
+  assert.equal(airliftRes.didAirlift, true);
+  state = airliftRes.state;
+  assert.ok((state.airliftVisuals?.length ?? 0) >= 1, 'Expected animated airlift visual vector');
+  assert.ok(state.mapPulses.some((p) => p.kind === 'airlift'), 'Expected airlift map pulse');
+
+  // Re-run command without recruitment to verify total units conserved during airlift
+  const armyAfter = getExactCountryArmy(state, '616');
+  assert.ok(armyAfter >= armyBefore, 'Conserved + any honestly recruited troops');
+
+  // Verify manual recruit emits 'recruit' pulse
+  const recRes = recruitUnits(state, front.id, 'infantry', 2000);
+  assert.equal(recRes.error, undefined);
+  assert.ok(recRes.state.mapPulses.some((p) => p.kind === 'recruit'));
+
+  // Direct runAutoPilotCommand test when manpower=0 strictly blocks recruitment without cheating
+  state.countries['616'].manpower = 0;
+  const zeroRecBefore = getExactCountryArmy(state, '616');
+  const cmdRes = runAutoPilotCommand(state, 'en', { allowAirlift: true });
+  assert.equal(cmdRes.didRecruit, false);
+  assert.equal(getExactCountryArmy(cmdRes.state, '616'), zeroRecBefore);
+});
+
+test('EXTREMELY EASY+ Emergency Comeback Protocol rescues player at war after severe territorial loss', () => {
+  let state = createNewGame('2026', '616', 'extremely_easy_plus', 'en');
+  const polProvs = Object.values(state.provinces).filter((p) => p.ownerId === '616');
+  // Simulate player losing 14 of 16 provinces while at war with Germany
+  for (let i = 2; i < polProvs.length; i++) {
+    state.provinces[polProvs[i].id].ownerId = '276';
+  }
+  state.countries['616'].atWarWith = ['276'];
+  state.countries['276'].atWarWith = ['616'];
+  state.countries['616'].treasury = 5;
+  polProvs[0].units = { infantry: 1500 };
+
+  const rescued = advanceDay(state, 'en');
+  assert.equal(rescued.comebackTriggeredCount, 1);
+  assert.ok(rescued.countries['616'].treasury >= 140);
+  assert.ok(getTotalUnits(rescued.provinces[polProvs[0].id].units) >= 15500);
+  assert.ok(rescued.mapPulses.some((p) => p.kind === 'comeback'));
+});
+
+test('Global Warming Index evolves dynamically and climate random events update target province & index', () => {
+  let state = createNewGame('2026', '616', 'normal', 'en');
+  const baseWarming = state.globalWarmingIndex;
+  assert.ok(baseWarming >= 20);
+
+  // Advance until first climate/random event (turn 3 or 6)
+  for (let t = 0; t < 5 && !state.pendingEvent?.isClimateEvent; t++) {
+    if (state.pendingEvent && !state.pendingEvent.isClimateEvent) {
+      state = resolveRandomEvent(state, state.pendingEvent.choices[0].id);
+    }
+    state = executeTurn(state, 'en');
+  }
+  assert.ok(state.pendingEvent?.isClimateEvent, 'Expected a province-specific climate event');
+  assert.ok(state.pendingEvent?.targetProvinceId, 'Expected target province on climate event');
+
+  const warmBeforeChoice = state.globalWarmingIndex;
+  const resolved = resolveRandomEvent(state, state.pendingEvent!.choices[0].id);
+  assert.equal(resolved.pendingEvent, null);
+  assert.notEqual(resolved.globalWarmingIndex, warmBeforeChoice);
+  assert.ok(resolved.mapPulses.some((p) => p.kind === 'climate'));
+});
+
+test('VERSION 3.0 World Conquest mode grants +300% income (4.0x), +150% attack (2.5x), logistics lv.3 & extreme climate immunity', () => {
+  const wc = createNewGame('2026', '616', 'world_conquest', 'en');
+  const norm = createNewGame('2026', '616', 'normal', 'en');
+  assert.equal(wc.countries['616'].tech.logistics, 3);
+  assert.ok(wc.countries['616'].treasury >= 240);
+
+  const wcBudget = computeDetailedBudget(wc, '616');
+  const normBudget = computeDetailedBudget(norm, '616');
+  assert.ok(wcBudget.taxIncome > normBudget.taxIncome * 3.8);
+
+  const wcAtk = computeArmyPower({ infantry: 10000 }, '2026', 'attack', 0, {
+    difficulty: 'world_conquest',
+    isPlayerSide: true,
+    temperatureC: -30,
+    logisticsTechLevel: 0,
+  });
+  const normColdAtk = computeArmyPower({ infantry: 10000 }, '2026', 'attack', 0, {
+    difficulty: 'normal',
+    isPlayerSide: true,
+    temperatureC: -30,
+    logisticsTechLevel: 0,
+  });
+  assert.ok(wcAtk / normColdAtk > 2.5);
+});
+
+test('Regional Celsius temperatures & thermal colors respond to latitude and Logistics mitigates cold/heat attrition', () => {
+  const state = createNewGame('2026', '616', 'normal', 'en');
+  const greenland = Object.values(state.provinces).find((p) => p.ownerId === '304')!;
+  const nigeria = Object.values(state.provinces).find((p) => p.ownerId === '566') ?? Object.values(state.provinces).find((p) => p.ownerId === '818')!;
+  assert.ok(typeof greenland.temperatureC === 'number');
+  assert.ok(greenland.temperatureC < nigeria.temperatureC, 'Arctic Greenland should be colder than tropical Africa');
+  assert.equal(temperatureToHex(-25), '#1D4ED8');
+  assert.equal(temperatureToHex(40), '#DC2626');
+
+  const noTech = getExtremeClimateAttrition(-22, 0, false);
+  const withLog = getExtremeClimateAttrition(-22, 1, false);
+  assert.ok(noTech.isExtreme && noTech.attritionRate > 0);
+  assert.equal(withLog.attritionRate, 0);
+});
+
+test('Instant War Auto-Pilot triggers border mobilization & 5s countdown, and Railways triple speed & unlock Armored Trains', () => {
+  let state = createNewGame('sandbox', '616', 'normal', 'en');
+  state = toggleAutoPilot(state);
+  const armyBeforeWar = getExactCountryArmy(state, '616');
+
+  const warRes = proposeDiplomacy(state, '112', 'war', 'en');
+  assert.equal(warRes.error, undefined);
+  state = warRes.state;
+  assert.ok(state.autoPilotNextAirliftAt > Date.now() - 1000, 'Expected 5-second airlift countdown scheduled on war declaration');
+  assert.ok(getExactCountryArmy(state, '616') > armyBeforeWar, 'Expected immediate Auto-Pilot border mobilization');
+
+  // Railway enables Armored Trains & 3x speed marches
+  const polBorder = Object.values(state.provinces).find(
+    (p) => p.ownerId === '616' && p.neighbors.some((nId) => state.provinces[nId]?.ownerId === '112'),
+  )!;
+  const target = polBorder.neighbors.map((id) => state.provinces[id]).find((p) => p.ownerId === '112')!;
+
+  const blockedTrain = recruitUnits(state, polBorder.id, 'armored_train', 1000);
+  assert.ok(blockedTrain.error, 'Armored Train should require Railway building');
+
+  const railBuild = constructBuilding(state, polBorder.id, 'railway');
+  assert.equal(railBuild.error, undefined);
+  state = railBuild.state;
+
+  const trainOk = recruitUnits(state, polBorder.id, 'armored_train', 1000);
+  assert.equal(trainOk.error, undefined);
+  state = trainOk.state;
+
+  const railMarch = issueArmyOrder(state, polBorder.id, target.id, { armored_train: 1000, infantry: 1000 });
+  assert.equal(railMarch.error, undefined);
+  const order = railMarch.state.orders[railMarch.state.orders.length - 1];
+  assert.equal(order.isRail, true);
+  assert.ok(order.durationDays <= 2, `Railway should triple march speed (durationDays=${order.durationDays})`);
+});
+
+test('Custom Unit Designer, Orbital Spy Satellites, Maritime Strait Blockades, and City Reconstruction work cleanly', () => {
+  let state = createNewGame('sandbox', '616', 'en');
+  state.countries['616'].treasury = 300;
+
+  // Custom Unit Designer
+  const bpRes = designCustomUnit(state, { name: 'PL-01 Apex', category: 'tanks', armor: 9, speed: 8, firepower: 10 }, 'en');
+  assert.equal(bpRes.error, undefined);
+  state = bpRes.state;
+  assert.equal(state.customBlueprints.length, 1);
+  const boostedTankAtk = computeArmyPower({ tanks: 10000 }, '2026', 'attack', 0, {
+    isPlayerSide: true,
+    customBlueprints: state.customBlueprints,
+  });
+  const baseTankAtk = computeArmyPower({ tanks: 10000 }, '2026', 'attack', 0, { isPlayerSide: true });
+  assert.ok(boostedTankAtk > baseTankAtk, 'Custom tank blueprint must boost tank combat power');
+
+  // Orbital Spy Satellite
+  const satRes = launchSpySatellite(state, '643', 'en');
+  assert.equal(satRes.error, undefined);
+  state = satRes.state;
+  assert.equal(state.activeSatellites.length, 1);
+  assert.ok(state.countries['643'].spiedUntil >= state.turn + 8);
+
+  // Strait Blockade requires Naval Port or Fleet first, then reduces wartime enemy trade by 35%
+  const warRes = proposeDiplomacy(state, '643', 'war', 'en');
+  state = warRes.state;
+  const blockedEarly = toggleStraitBlockade(state, 'baltic', 'en');
+  assert.ok(blockedEarly.error, 'Strait blockade should require Port or Naval Fleet');
+  const coastProv = Object.values(state.provinces).find((p) => p.ownerId === '616' && p.seaNeighbors.length > 0)!;
+  const portBuild = constructBuilding(state, coastProv.id, 'port');
+  assert.equal(portBuild.error, undefined);
+  state = portBuild.state;
+  const rusTradeBefore = computeDetailedBudget(state, '643').tradeIncome;
+  const blkRes = toggleStraitBlockade(state, 'baltic', 'en');
+  assert.equal(blkRes.error, undefined);
+  state = blkRes.state;
+  const rusTradeAfter = computeDetailedBudget(state, '643').tradeIncome;
+  assert.ok(Math.abs(rusTradeAfter / rusTradeBefore - 0.65) < 0.05);
+
+  // City Reconstruction repairs devastation & boosts province economy
+  const cap = state.provinces['616_p0'];
+  cap.nuclearDevastation = 45;
+  const ecoBefore = cap.economy;
+  const recCity = reconstructProvinceCity(state, cap.id, 'en');
+  assert.equal(recCity.error, undefined);
+  assert.equal(recCity.state.provinces[cap.id].nuclearDevastation, 0);
+  assert.ok(recCity.state.provinces[cap.id].economy > ecoBefore);
 });

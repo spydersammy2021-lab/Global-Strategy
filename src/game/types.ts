@@ -9,6 +9,7 @@ export type SpectatorSpeed = 'paused' | '1x' | '2x' | '3x' | '5x';
 export type ScenarioId = '966' | '1410' | '1619' | '1918' | '1939' | '2026' | 'sandbox';
 
 export type DifficultyId =
+  | 'world_conquest'
   | 'auto_pilot'
   | 'extremely_easy_plus'
   | 'extremely_easy'
@@ -28,6 +29,10 @@ export type SeasonId = 'spring' | 'summer' | 'autumn' | 'winter';
 
 export type WeatherKind = 'sunny' | 'rain' | 'snow' | 'fog';
 
+export type MapOverlayMode = 'political' | 'thermal' | 'logistics';
+
+export type StraitBlockadeId = 'baltic' | 'suez' | 'gibraltar' | 'malacca';
+
 export type BuildingType =
   | 'factory'
   | 'farm'
@@ -35,6 +40,7 @@ export type BuildingType =
   | 'port'
   | 'fort'
   | 'university'
+  | 'railway'
   | 'coastal_defense'
   | 'missile_silo'
   | 'spaceport';
@@ -46,11 +52,32 @@ export type UnitType =
   | 'anti_air'
   | 'aviation'
   | 'naval_fleet'
+  | 'armored_train'
   | 'archers'
   | 'cavalry'
   | 'artillery';
 
 export type UnitBreakdown = Partial<Record<UnitType, number>>;
+
+export type CustomUnitCategory = 'tanks' | 'aviation' | 'naval_fleet';
+
+export interface CustomUnitBlueprint {
+  id: string;
+  name: string;
+  category: CustomUnitCategory;
+  armor: number; // 1..10
+  speed: number; // 1..10
+  firepower: number; // 1..10
+  createdAt: number;
+}
+
+export interface OrbitalSatellite {
+  id: string;
+  ownerCountryId: string;
+  targetCountryId: string;
+  centroid: [number, number];
+  expiresDay: number;
+}
 
 export interface FlagPattern {
   type: 'h2' | 'h3' | 'v3' | 'cross' | 'canton' | 'circle' | 'diagonal' | 'bicolor_star';
@@ -102,6 +129,7 @@ export interface ProvinceState {
   isCapital: boolean;
   assimilated: boolean;
   weather: WeatherKind;
+  temperatureC: number;
   nuclearDevastation?: number; // 0..100
 }
 
@@ -222,6 +250,7 @@ export interface ArmyOrder {
   units: UnitBreakdown;
   isAttack: boolean;
   isNaval: boolean;
+  isRail?: boolean;
   startDay: number;
   durationDays: number;
   progress: number; // 0..1
@@ -242,7 +271,7 @@ export interface MapPulseEvent {
   id: string;
   kind: MapPulseKind;
   centroid: [number, number];
-  color: string;
+  color?: string;
   createdAt: number;
   label?: string;
 }
@@ -365,6 +394,7 @@ export interface GameState {
   difficulty: DifficultyId;
   autoPilotEnabled: boolean;
   autoPilotLastAirliftAt: number;
+  autoPilotNextAirliftAt: number;
   comebackTriggeredCount: number;
   lastComebackDay: number;
   turn: number; // Monthly economy cycles completed (starts at 1)
@@ -386,6 +416,9 @@ export interface GameState {
   waterAlerts: WaterAlert[];
   nuclearWinterLevel: number; // 0..100
   globalWarmingIndex: number; // 0..100
+  customBlueprints: CustomUnitBlueprint[];
+  activeSatellites: OrbitalSatellite[];
+  blockadedStraits: Partial<Record<StraitBlockadeId, string>>; // straitId -> blockerCountryId
   worldCouncil: WorldCouncilState;
   globalMarket: GlobalMarketState;
   timelapseSnapshots: TimelapseSnapshot[];

@@ -3,6 +3,7 @@ import {
   COMMODITY_BASE_PRICES,
   MEGAPROJECTS,
   SPACE_OCEAN_NODES,
+  STRATEGIC_STRAITS,
   WORLD_COUNCIL_RESOLUTIONS,
 } from '../data/spaceSectors';
 import {
@@ -10,8 +11,8 @@ import {
   canUnlockTechNode,
   planTechResearchPath,
 } from '../data/techTree';
-import { SCENARIOS, getUnitSpec } from '../data/scenarios';
-import { generateAiOrdersAndActions } from './ai';
+import { SCENARIOS, getDifficultyConfig, getUnitSpec } from '../data/scenarios';
+import { generateAiOrdersAndActions, runAutoPilotCommand } from './ai';
 import {
   addUnits,
   computeCountrySummaries,
@@ -21,8 +22,9 @@ import {
   splitUnitsByRatio,
   subtractUnits,
 } from './combat';
-import { buildWorldMapData } from './mapGen';
+import { buildWorldMapData, projectLonLat } from './mapGen';
 import type {
+  AirliftOrderVisual,
   ArmyOrder,
   BattleEvent,
   BuildingType,
@@ -30,6 +32,8 @@ import type {
   CommodityId,
   CountryState,
   CustomScenarioConfig,
+  CustomUnitBlueprint,
+  CustomUnitCategory,
   DifficultyId,
   GameMode,
   GameNotification,
@@ -37,20 +41,25 @@ import type {
   IdeologyId,
   Language,
   LoanRecord,
+  MapPulseEvent,
   MegaprojectId,
   MinisterRole,
   MissileStrikeVisual,
   PendingRandomEvent,
   ProvinceState,
   ScenarioId,
+  StraitBlockadeId,
   TechNodeId,
   UnitBreakdown,
   UnitType,
+  WeatherKind,
 } from './types';
 import {
   WEATHER_EFFECTS,
+  computeProvinceTemperatureC,
   computeProvinceWeather,
   generateWaterAlerts,
+  getExtremeClimateAttrition,
   getSeasonFromMonth,
 } from './weather';
 
@@ -61,13 +70,15 @@ export const BUILDING_COSTS: Record<BuildingType, number> = {
   port: 24,
   fort: 26,
   university: 28,
+  railway: 20,
   coastal_defense: 25,
   missile_silo: 44,
   spaceport: 65,
 };
 
-const RANDOM_EVENTS_POOL: Array<{
+interface EventTemplate {
   id: string;
+  isClimateEvent?: boolean;
   title: Record<'en' | 'pl', string>;
   description: Record<'en' | 'pl', string>;
   choices: Array<{
@@ -78,8 +89,13 @@ const RANDOM_EVENTS_POOL: Array<{
     manpowerDelta?: number;
     researchDelta?: number;
     goldenAgeDays?: number;
+    climateDelta?: number;
+    provinceEconomyDelta?: number;
+    weatherShift?: WeatherKind;
   }>;
-}> = [
+}
+
+const RANDOM_EVENTS_POOL: EventTemplate[] = [
   {
     id: 'boom',
     title: { en: 'Industrial Boom', pl: 'Boom Przemysłowy' },
@@ -168,13 +184,106 @@ const RANDOM_EVENTS_POOL: Array<{
   },
 ];
 
-function buildPendingEvent(turn: number, lang: Language): PendingRandomEvent {
-  const tpl = RANDOM_EVENTS_POOL[(turn / 3) % RANDOM_EVENTS_POOL.length | 0];
+const CLIMATE_EVENTS_POOL: EventTemplate[] = [
+  {
+    id: 'coastal_surge',
+    isClimateEvent: true,
+    title: { en: 'Climate Shock: Coastal Storm Surge', pl: 'Szok Klimatyczny: Sztormowe Wezbranie' },
+    description: {
+      en: 'Rising sea levels and warm ocean currents batter coastal logistics in {PROV}.',
+      pl: 'Podnoszący się poziom mórz i gwałtowne prądy zagrażają infrastrukturze w prowincji {PROV}.',
+    },
+    choices: [
+      {
+        id: 'seawall',
+        label: { en: 'Build Tide Barriers (-14 PLN, -4 Warming, +0.4 Eco)', pl: 'Zbuduj Wały (-14 PLN, -4 Ociepl., +0.4 Gosp.)' },
+        treasuryDelta: -14,
+        climateDelta: -4,
+        provinceEconomyDelta: 0.4,
+        weatherShift: 'rain',
+      },
+      {
+        id: 'evacuate_coast',
+        label: { en: 'Emergency Evacuation (+4 Warming, -0.5 Eco)', pl: 'Ewakuacja doraźna (+4 Ociepl., -0.5 Gosp.)' },
+        climateDelta: 4,
+        provinceEconomyDelta: -0.5,
+        stabilityDelta: -2,
+        weatherShift: 'rain',
+      },
+    ],
+  },
+  {
+    id: 'mega_drought',
+    isClimateEvent: true,
+    title: { en: 'Climate Shock: Continental Heatwave & Drought', pl: 'Szok Klimatyczny: Susza Kontynentalna' },
+    description: {
+      en: 'Severe thermal anomalies strain water supply and harvests across {PROV}.',
+      pl: 'Fala upałów i suszy uderza w plony oraz logistykę w prowincji {PROV}.',
+    },
+    choices: [
+      {
+        id: 'agri_desal',
+        label: { en: 'Smart Irrigation Grid (-12 PLN, -3 Warming, +18 RP)', pl: 'Sieć Nawadniania (-12 PLN, -3 Ociepl., +18 PB)' },
+        treasuryDelta: -12,
+        climateDelta: -3,
+        researchDelta: 18,
+        weatherShift: 'sunny',
+      },
+      {
+        id: 'ration_grain',
+        label: { en: 'Coal Peaker Override (+10 PLN, +5 Warming, -0.4 Eco)', pl: 'Awaryjne Elektrownie (+10 PLN, +5 Ociepl., -0.4 Gosp.)' },
+        treasuryDelta: 10,
+        climateDelta: 5,
+        provinceEconomyDelta: -0.4,
+        weatherShift: 'fog',
+      },
+    ],
+  },
+  {
+    id: 'clean_fusion_pact',
+    isClimateEvent: true,
+    title: { en: 'Green Grid Transition Initiative', pl: 'Inicjatywa Czystej Transformacji Energii' },
+    description: {
+      en: 'Scientists in {PROV} propose zero-carbon industrial retrofits to cool planetary warming.',
+      pl: 'Inżynierowie z prowincji {PROV} proponują dekarbonizację przemysłu i obniżenie emisji.',
+    },
+    choices: [
+      {
+        id: 'fund_clean',
+        label: { en: 'Deploy Zero-Carbon Grid (-15 PLN, -7 Warming, +24 RP)', pl: 'Wdróż Czystą Sieć (-15 PLN, -7 Ociepl., +24 PB)' },
+        treasuryDelta: -15,
+        climateDelta: -7,
+        researchDelta: 24,
+        provinceEconomyDelta: 0.6,
+      },
+      {
+        id: 'heavy_industry',
+        label: { en: 'Expand Heavy Industry (+20 PLN, +6 Warming)', pl: 'Rozbuduj Przemysł Ciężki (+20 PLN, +6 Ociepl.)' },
+        treasuryDelta: 20,
+        climateDelta: 6,
+      },
+    ],
+  },
+];
+
+function buildPendingEvent(
+  turn: number,
+  lang: Language,
+  targetProvince?: ProvinceState,
+  forceClimate = false,
+): PendingRandomEvent {
+  const useClimate = forceClimate || (Boolean(targetProvince) && turn % 2 === 0);
+  const pool = useClimate ? CLIMATE_EVENTS_POOL : RANDOM_EVENTS_POOL;
+  const tpl = pool[((turn / 3) | 0) % pool.length];
   const lk: 'en' | 'pl' = lang === 'en' ? 'en' : 'pl';
+  const provName = targetProvince?.name ?? 'Capital Sector';
   return {
     id: `${tpl.id}_${turn}`,
     title: tpl.title[lk],
-    description: tpl.description[lk],
+    description: tpl.description[lk].replace('{PROV}', provName),
+    isClimateEvent: Boolean(tpl.isClimateEvent),
+    targetProvinceId: tpl.isClimateEvent ? targetProvince?.id : undefined,
+    targetProvinceName: tpl.isClimateEvent ? provName : undefined,
     choices: tpl.choices.map((c) => ({
       id: c.id,
       label: c.label[lk],
@@ -183,6 +292,9 @@ function buildPendingEvent(turn: number, lang: Language): PendingRandomEvent {
       manpowerDelta: c.manpowerDelta,
       researchDelta: c.researchDelta,
       goldenAgeDays: c.goldenAgeDays,
+      climateDelta: c.climateDelta,
+      provinceEconomyDelta: c.provinceEconomyDelta,
+      weatherShift: c.weatherShift,
     })),
   };
 }
@@ -206,6 +318,7 @@ export function createNewGame(
 
   const mapData = buildWorldMapData();
   const scenario = SCENARIOS[scenarioId];
+  const diffConfig = getDifficultyConfig(difficulty);
   const initialSeason = getSeasonFromMonth(scenario.startMonthIndex);
 
   const countries: Record<string, CountryState> = {};
@@ -225,12 +338,19 @@ export function createNewGame(
       (scenario.strengthOverrides?.[id] ??
         Math.round((meta.startingArmy2026 ?? 15000) * scenario.armyScale)) *
       (customScenario?.armyMultipliers?.[id] ?? 1);
-    const baseTreasury =
+    const isPlayerNation = gameMode === 'player' && id === effectivePlayerId;
+    const rawTreasury =
       customScenario?.treasuryOverrides?.[id] ??
       Math.max(
         22,
         Math.round(18 + (meta.gdpFactor ?? 1) * 18 + Math.min(75, estArmy / 2800)),
       );
+    const baseTreasury =
+      !isPlayerNation && gameMode === 'player'
+        ? Math.max(12, Math.round(rawTreasury * diffConfig.aiStartBudgetMult))
+        : rawTreasury;
+    const isWorldConquestPlayer = isPlayerNation && difficulty === 'world_conquest';
+    const finalStartTreasury = isWorldConquestPlayer ? Math.max(baseTreasury * 2.4, 240) : baseTreasury;
 
     countries[id] = {
       id,
@@ -238,19 +358,19 @@ export function createNewGame(
       displayName,
       color: meta.color,
       flag: meta.flag,
-      treasury: baseTreasury,
-      manpower: Math.max(18000, Math.round(estArmy * 0.65)),
-      maxManpower: Math.max(40000, Math.round(estArmy * 1.8)),
-      researchPoints: 25,
-      stability: 92,
+      treasury: Math.round(finalStartTreasury),
+      manpower: Math.max(18000, Math.round(estArmy * (isWorldConquestPlayer ? 1.8 : 0.65))),
+      maxManpower: Math.max(40000, Math.round(estArmy * (isWorldConquestPlayer ? 3.0 : 1.8))),
+      researchPoints: isWorldConquestPlayer ? 75 : 25,
+      stability: isWorldConquestPlayer ? 100 : 92,
       taxRate: 18,
       loans: [],
-      movementPoints: 8,
-      maxMovementPoints: 8,
-      diplomacyPoints: 5,
-      maxDiplomacyPoints: 5,
-      tech: { military: 0, economy: 0, logistics: 0 },
-      unlockedTechs: [],
+      movementPoints: isWorldConquestPlayer ? 16 : 8,
+      maxMovementPoints: isWorldConquestPlayer ? 16 : 8,
+      diplomacyPoints: isWorldConquestPlayer ? 8 : 5,
+      maxDiplomacyPoints: isWorldConquestPlayer ? 8 : 5,
+      tech: isWorldConquestPlayer ? { military: 2, economy: 2, logistics: 3 } : { military: 0, economy: 0, logistics: 0 },
+      unlockedTechs: isWorldConquestPlayer ? ['log_supply'] : [],
       techQueue: [],
       ideology: scenario.isModern ? 'democracy' : 'monarchy',
       nextElectionDay: 360,
@@ -258,7 +378,7 @@ export function createNewGame(
       stockpiles: { energy: 10, steel: 10, rare_earths: 4, grain: 14 },
       nuclearWarheads: 0,
       orbitalShieldActive: false,
-      goldenAgeDaysLeft: 0,
+      goldenAgeDaysLeft: isWorldConquestPlayer ? 120 : 0,
       megaprojects: [],
       spaceColonies: [],
       allies: [],
@@ -337,6 +457,19 @@ export function createNewGame(
 
     popByOwner[ownerId] = (popByOwner[ownerId] ?? 0) + provPop;
 
+    const provWeather = computeProvinceWeather(geom.centroid, initialSeason, 1, provIdx);
+    const initialWarming = scenario.isModern ? 28 : 8;
+    const provTempC = computeProvinceTemperatureC({
+      centroid: geom.centroid,
+      season: initialSeason,
+      weather: provWeather,
+      globalWarmingIndex: initialWarming,
+      nuclearWinterLevel: 0,
+      provSeedIndex: provIdx,
+      totalDays: 1,
+    });
+    provIdx++;
+
     provinces[geom.id] = {
       id: geom.id,
       name: geom.name,
@@ -354,7 +487,8 @@ export function createNewGame(
       centroid: geom.centroid,
       isCapital,
       assimilated: true,
-      weather: computeProvinceWeather(geom.centroid, initialSeason, 1, provIdx++),
+      weather: provWeather,
+      temperatureC: provTempC,
       nuclearDevastation: 0,
     };
   }
@@ -435,6 +569,11 @@ export function createNewGame(
     gameMode,
     scenarioId,
     difficulty,
+    autoPilotEnabled: gameMode === 'player' && difficulty === 'auto_pilot',
+    autoPilotLastAirliftAt: 0,
+    autoPilotNextAirliftAt: gameMode === 'player' && difficulty === 'auto_pilot' ? Date.now() + 5000 : 0,
+    comebackTriggeredCount: 0,
+    lastComebackDay: -100,
     turn: 1,
     totalDays: 1,
     day: 1,
@@ -449,8 +588,14 @@ export function createNewGame(
     orders: [],
     recentBattles: [],
     recentMissiles: [],
+    mapPulses: [],
+    airliftVisuals: [],
     waterAlerts,
     nuclearWinterLevel: 0,
+    globalWarmingIndex: scenario.isModern ? 28 : 8,
+    customBlueprints: [],
+    activeSatellites: [],
+    blockadedStraits: {},
     worldCouncil: {
       activeResolutionId: WORLD_COUNCIL_RESOLUTIONS[0].id,
       yesVotes: 4,
@@ -513,6 +658,9 @@ export function recruitUnits(
   if (unitType === 'naval_fleet' && prov.seaNeighbors.length === 0 && !prov.buildings.includes('port')) {
     return { state, error: 'Naval Fleets require a coastal province or Port.' };
   }
+  if (unitType === 'armored_train' && !prov.buildings.includes('railway')) {
+    return { state, error: 'Armored Trains require a Strategic Railway in this province.' };
+  }
   if (count < 500) {
     return { state, error: 'Minimum recruitment batch is 500 units.' };
   }
@@ -545,11 +693,22 @@ export function recruitUnits(
     },
   };
 
+  const now = Date.now();
+  const pulse: MapPulseEvent = {
+    id: `pulse_rec_${now}_${prov.id}`,
+    kind: 'recruit',
+    centroid: prov.centroid,
+    color: '#22C55E',
+    label: `+${count >= 1000 ? `${(count / 1000).toFixed(1)}k` : count}`,
+    createdAt: now,
+  };
+
   return {
     state: {
       ...state,
       countries: { ...state.countries, [country.id]: nextCountry },
       provinces: { ...state.provinces, [prov.id]: nextProv },
+      mapPulses: [pulse, ...(state.mapPulses ?? [])].slice(0, 14),
     },
   };
 }
@@ -913,7 +1072,12 @@ export function issueArmyOrder(
   const isNaval = !isLandNeighbor && isSeaNeighbor;
   const hasStormDelay =
     isNaval && state.waterAlerts.some((w) => w.affectedProvinceIds.includes(to.id));
-  const durationDays = Math.max(2, (isNaval ? 6 : 4) + (hasStormDelay ? 3 : 0) - Math.min(2, Math.floor(player.tech.logistics / 2)));
+  const isRail = !isNaval && (from.buildings.includes('railway') || to.buildings.includes('railway'));
+  const baseDuration = Math.max(
+    2,
+    (isNaval ? 6 : 4) + (hasStormDelay ? 3 : 0) - Math.min(2, Math.floor(player.tech.logistics / 2)),
+  );
+  const durationDays = isRail ? Math.max(1, Math.ceil(baseDuration / 3)) : baseDuration;
 
   let nextCountries = state.countries;
   const nextChronicle = [...state.chronicle];
@@ -967,6 +1131,7 @@ export function issueArmyOrder(
     units: clamped,
     isAttack,
     isNaval,
+    isRail,
     startDay: state.totalDays,
     durationDays,
     progress: 0,
@@ -1258,13 +1423,24 @@ export function launchStrategicStrike(
 
   const detail = `${player.displayName} → ${target.name} (${intercepted ? 'INTERCEPTED' : 'HIT'})`;
 
+  const strikePulse: MapPulseEvent = {
+    id: `pulse_msl_${now}`,
+    kind: 'nuclear',
+    centroid: target.centroid,
+    color: intercepted ? '#38BDF8' : isNuclear ? '#EF4444' : '#F97316',
+    label: intercepted ? 'SHIELD' : isNuclear ? 'NUCLEAR' : 'STRIKE',
+    createdAt: now,
+  };
+
   return {
     state: {
       ...state,
       countries: nextCountries,
       provinces: nextProvs,
       nuclearWinterLevel: nextWinter,
+      globalWarmingIndex: isNuclear && !intercepted ? Math.min(100, (state.globalWarmingIndex ?? 20) + 5) : state.globalWarmingIndex,
       recentMissiles: [visual, ...state.recentMissiles].slice(0, 6),
+      mapPulses: [strikePulse, ...(state.mapPulses ?? [])].slice(0, 14),
       chronicle: [
         {
           id: `chr_msl_${now}`,
@@ -1852,12 +2028,318 @@ export function proposeDiplomacy(
     });
   }
 
+  let resultState: GameState = {
+    ...state,
+    countries: nextCountries,
+    notifications: nextNotifications.slice(0, 10),
+    chronicle: nextChronicle.slice(0, 120),
+  };
+
+  // Instant Auto-Pilot War Mobilization & Immediate 5-second Airlift Countdown!
+  if (action === 'war' && resultState.autoPilotEnabled && resultState.gameMode === 'player') {
+    const mob = runAutoPilotCommand(resultState, lang, { allowAirlift: false });
+    resultState = {
+      ...mob.state,
+      autoPilotNextAirliftAt: Date.now() + 5000,
+    };
+  }
+
+  return { state: resultState };
+}
+
+export function toggleAutoPilot(state: GameState): GameState {
+  if (state.gameMode !== 'player') return state;
+  const enabling = !state.autoPilotEnabled;
+  return {
+    ...state,
+    autoPilotEnabled: enabling,
+    autoPilotNextAirliftAt: enabling ? Date.now() + 5000 : 0,
+  };
+}
+
+export function triggerAutoPilotAirliftNow(
+  state: GameState,
+  lang: Language = 'en',
+): { state: GameState; summaryAction?: string; didAirlift: boolean } {
+  if (!state.autoPilotEnabled || state.gameMode !== 'player' || state.outcome !== 'ongoing') {
+    return { state, didAirlift: false };
+  }
+  const res = runAutoPilotCommand(state, lang, { allowAirlift: true });
+  return {
+    state: {
+      ...res.state,
+      autoPilotNextAirliftAt: Date.now() + 5000,
+    },
+    summaryAction: res.summaryAction,
+    didAirlift: res.didAirlift,
+  };
+}
+
+// VERSION 3.0 Custom Military Unit Designer
+export function designCustomUnit(
+  state: GameState,
+  params: { name: string; category: CustomUnitCategory; armor: number; speed: number; firepower: number },
+  lang: Language = 'en',
+): { state: GameState; error?: string } {
+  const player = state.countries[state.playerCountryId];
+  if (!player) return { state, error: 'No active player nation.' };
+  const cost = 18;
+  if (player.treasury < cost) {
+    return { state, error: `Designing a custom blueprint requires ${cost} PLN.` };
+  }
+  const trimmedName = params.name.trim().slice(0, 32) || 'APEX Prototype Mk.I';
+  const bp: CustomUnitBlueprint = {
+    id: `bp_${Date.now()}`,
+    name: trimmedName,
+    category: params.category,
+    armor: Math.max(1, Math.min(10, Math.round(params.armor))),
+    speed: Math.max(1, Math.min(10, Math.round(params.speed))),
+    firepower: Math.max(1, Math.min(10, Math.round(params.firepower))),
+    createdAt: Date.now(),
+  };
+
   return {
     state: {
       ...state,
-      countries: nextCountries,
-      notifications: nextNotifications.slice(0, 10),
-      chronicle: nextChronicle.slice(0, 120),
+      countries: {
+        ...state.countries,
+        [player.id]: {
+          ...player,
+          treasury: Number((player.treasury - cost).toFixed(1)),
+        },
+      },
+      customBlueprints: [bp, ...(state.customBlueprints ?? [])].slice(0, 8),
+      notifications: [
+        {
+          id: `notif_bp_${bp.id}`,
+          type: 'info' as const,
+          title: lang === 'pl' ? 'Nowy Projekt Wojskowy' : 'Custom Blueprint Commissioned',
+          message: `${bp.name} (ATK ${bp.firepower} · ARM ${bp.armor} · SPD ${bp.speed})`,
+          createdAt: Date.now(),
+        },
+        ...state.notifications,
+      ].slice(0, 10),
+    },
+  };
+}
+
+// VERSION 3.0 Orbital Spy Satellites (Reveals Fog of War & Orbits Target Nation)
+export function launchSpySatellite(
+  state: GameState,
+  targetCountryId: string,
+  lang: Language = 'en',
+): { state: GameState; error?: string } {
+  const player = state.countries[state.playerCountryId];
+  const target = state.countries[targetCountryId];
+  if (!player || !target || target.eliminated || target.id === player.id) {
+    return { state, error: 'Invalid satellite target nation.' };
+  }
+  const cost = 22;
+  if (player.treasury < cost) {
+    return { state, error: `Orbital Spy Satellite launch costs ${cost} PLN.` };
+  }
+  const targetCap =
+    Object.values(state.provinces).find((p) => p.ownerId === target.id && p.isCapital) ??
+    Object.values(state.provinces).find((p) => p.ownerId === target.id);
+  if (!targetCap) return { state, error: 'Target nation controls no territory.' };
+
+  const now = Date.now();
+  const sat = {
+    id: `sat_${now}_${target.id}`,
+    ownerCountryId: player.id,
+    targetCountryId: target.id,
+    centroid: targetCap.centroid,
+    expiresDay: state.totalDays + 90,
+  };
+
+  return {
+    state: {
+      ...state,
+      countries: {
+        ...state.countries,
+        [player.id]: {
+          ...player,
+          treasury: Number((player.treasury - cost).toFixed(1)),
+        },
+        [target.id]: {
+          ...target,
+          spiedUntil: Math.max(target.spiedUntil, state.turn + 8),
+        },
+      },
+      activeSatellites: [
+        sat,
+        ...(state.activeSatellites ?? []).filter((s) => s.targetCountryId !== target.id),
+      ].slice(0, 10),
+      mapPulses: [
+        {
+          id: `pulse_sat_${now}`,
+          kind: 'airlift' as const,
+          centroid: targetCap.centroid,
+          color: '#38BDF8',
+          label: '🛰️ ORBITAL SCAN',
+          createdAt: now,
+        },
+        ...(state.mapPulses ?? []),
+      ].slice(0, 14),
+      notifications: [
+        {
+          id: `notif_sat_${now}`,
+          type: 'intel' as const,
+          title: lang === 'pl' ? 'Satelita Szpiegowski na Orbicie!' : 'Orbital Spy Satellite Active!',
+          message:
+            lang === 'pl'
+              ? `Stały zwiad satelitarny nad ${target.displayName} (90 dni).`
+              : `Continuous orbital reconnaissance sweeping ${target.displayName} (90 days).`,
+          createdAt: now,
+        },
+        ...state.notifications,
+      ].slice(0, 10),
+    },
+  };
+}
+
+// VERSION 3.0 Maritime Strait Blockades
+export function toggleStraitBlockade(
+  state: GameState,
+  straitId: StraitBlockadeId,
+  lang: Language = 'en',
+): { state: GameState; error?: string } {
+  const player = state.countries[state.playerCountryId];
+  if (!player) return { state, error: 'No active player nation.' };
+
+  const existingBlocker = state.blockadedStraits?.[straitId];
+  if (existingBlocker === player.id) {
+    const nextStraits = { ...(state.blockadedStraits ?? {}) };
+    delete nextStraits[straitId];
+    return {
+      state: {
+        ...state,
+        blockadedStraits: nextStraits,
+      },
+    };
+  }
+
+  const hasFleetOrPort = Object.values(state.provinces).some(
+    (p) =>
+      p.ownerId === player.id &&
+      ((p.units.naval_fleet ?? 0) >= 500 || p.buildings.includes('port')),
+  );
+  if (!hasFleetOrPort) {
+    return { state, error: 'Blockading a strategic strait requires a Naval Port or Naval Fleet.' };
+  }
+  if (player.treasury < 15) {
+    return { state, error: 'Deploying naval blockade squadron requires 15 PLN.' };
+  }
+
+  const strait = STRATEGIC_STRAITS.find((s) => s.id === straitId);
+  const now = Date.now();
+  const pt: [number, number] =
+    (strait ? projectLonLat(strait.lon, strait.lat) : null) ?? [1200, 500];
+
+  return {
+    state: {
+      ...state,
+      countries: {
+        ...state.countries,
+        [player.id]: {
+          ...player,
+          treasury: Number((player.treasury - 15).toFixed(1)),
+        },
+      },
+      blockadedStraits: {
+        ...(state.blockadedStraits ?? {}),
+        [straitId]: player.id,
+      },
+      mapPulses: [
+        {
+          id: `pulse_blk_${now}`,
+          kind: 'battle' as const,
+          centroid: pt,
+          color: '#38BDF8',
+          label: '⚓ BLOCKADE',
+          createdAt: now,
+        },
+        ...(state.mapPulses ?? []),
+      ].slice(0, 14),
+      notifications: [
+        {
+          id: `notif_blk_${now}`,
+          type: 'war' as const,
+          title: lang === 'pl' ? 'Blokada Morska Cieśniny!' : 'Maritime Strait Blockaded!',
+          message:
+            lang === 'pl'
+              ? `Flota zablokowała ${strait?.name.pl ?? straitId} (-35% handlu wrogów).`
+              : `Navy sealed ${strait?.name.en ?? straitId} (-35% enemy wartime trade).`,
+          createdAt: now,
+        },
+        ...state.notifications,
+      ].slice(0, 10),
+    },
+  };
+}
+
+// VERSION 3.0 City & Province Reconstruction
+export function reconstructProvinceCity(
+  state: GameState,
+  provinceId: string,
+  lang: Language = 'en',
+): { state: GameState; error?: string } {
+  const player = state.countries[state.playerCountryId];
+  const prov = state.provinces[provinceId];
+  if (!player || !prov || prov.ownerId !== player.id) {
+    return { state, error: 'Province is not under your command.' };
+  }
+  const cost = 14;
+  if (player.treasury < cost) {
+    return { state, error: `City Reconstruction requires ${cost} PLN.` };
+  }
+
+  const now = Date.now();
+  return {
+    state: {
+      ...state,
+      countries: {
+        ...state.countries,
+        [player.id]: {
+          ...player,
+          treasury: Number((player.treasury - cost).toFixed(1)),
+          stability: Math.min(100, player.stability + 2),
+        },
+      },
+      provinces: {
+        ...state.provinces,
+        [prov.id]: {
+          ...prov,
+          nuclearDevastation: 0,
+          assimilated: true,
+          economy: Number((prov.economy + 0.85).toFixed(2)),
+        },
+      },
+      mapPulses: [
+        {
+          id: `pulse_recity_${now}`,
+          kind: 'recruit' as const,
+          centroid: prov.centroid,
+          color: '#FBBF24',
+          label: '🏙️ REBUILT',
+          createdAt: now,
+        },
+        ...(state.mapPulses ?? []),
+      ].slice(0, 14),
+      chronicle: [
+        {
+          id: `chr_rebuilt_${state.totalDays}_${now}`,
+          turn: state.turn,
+          day: state.day,
+          year: state.year,
+          monthIndex: state.monthIndex,
+          type: 'event' as const,
+          title: lang === 'pl' ? 'Odbudowa Miasta' : 'City Reconstruction',
+          detail: `${player.displayName}: ${prov.name} (+0.85 Eco, +2% Stab.)`,
+          countryIds: [player.id],
+        },
+        ...state.chronicle,
+      ].slice(0, 120),
     },
   };
 }
@@ -1880,6 +2362,35 @@ export function resolveRandomEvent(state: GameState, choiceId: string): GameStat
     goldenAgeDaysLeft: player.goldenAgeDaysLeft + (choice.goldenAgeDays ?? 0),
   };
 
+  let nextProvs = state.provinces;
+  const nextPulses = [...(state.mapPulses ?? [])];
+  if (evt.targetProvinceId && state.provinces[evt.targetProvinceId]) {
+    const tp = state.provinces[evt.targetProvinceId];
+    nextProvs = {
+      ...state.provinces,
+      [tp.id]: {
+        ...tp,
+        economy: Math.max(0.5, Number((tp.economy + (choice.provinceEconomyDelta ?? 0)).toFixed(2))),
+        weather: choice.weatherShift ?? tp.weather,
+      },
+    };
+    if (evt.isClimateEvent) {
+      nextPulses.unshift({
+        id: `pulse_clim_${Date.now()}_${tp.id}`,
+        kind: 'climate',
+        centroid: tp.centroid,
+        color: '#F59E0B',
+        label: tp.name,
+        createdAt: Date.now(),
+      });
+    }
+  }
+
+  const nextWarming = Math.max(
+    0,
+    Math.min(100, Number(((state.globalWarmingIndex ?? 24) + (choice.climateDelta ?? 0)).toFixed(1))),
+  );
+
   const entry: ChronicleEntry = {
     id: `chr_evt_${state.totalDays}_${evt.id}`,
     turn: state.turn,
@@ -1894,16 +2405,20 @@ export function resolveRandomEvent(state: GameState, choiceId: string): GameStat
 
   return {
     ...state,
+    provinces: nextProvs,
     countries: {
       ...state.countries,
       [player.id]: nextCountry,
     },
+    globalWarmingIndex: nextWarming,
+    mapPulses: nextPulses.slice(0, 14),
     pendingEvent: null,
     chronicle: [entry, ...state.chronicle].slice(0, 120),
   };
 }
 
 function cloneState(prevState: GameState): GameState {
+  const now = Date.now();
   return {
     ...prevState,
     provinces: Object.fromEntries(
@@ -1936,7 +2451,12 @@ function cloneState(prevState: GameState): GameState {
     ),
     orders: prevState.orders.map((o) => ({ ...o, units: { ...o.units } })),
     recentBattles: [...prevState.recentBattles].slice(0, 24),
-    recentMissiles: prevState.recentMissiles.filter((m) => Date.now() - m.createdAt < 3200),
+    recentMissiles: prevState.recentMissiles.filter((m) => now - m.createdAt < 3500),
+    mapPulses: (prevState.mapPulses ?? []).filter((p) => now - p.createdAt < 4600),
+    airliftVisuals: (prevState.airliftVisuals ?? []).filter((a: AirliftOrderVisual) => now - a.createdAt < 4800),
+    customBlueprints: [...(prevState.customBlueprints ?? [])],
+    activeSatellites: (prevState.activeSatellites ?? []).filter((s) => s.expiresDay >= prevState.totalDays),
+    blockadedStraits: { ...(prevState.blockadedStraits ?? {}) },
     chronicle: [...prevState.chronicle],
     notifications: [...prevState.notifications],
     timelapseSnapshots: [...prevState.timelapseSnapshots],
@@ -2032,15 +2552,28 @@ export function advanceDay(prevState: GameState, lang: Language = 'en'): GameSta
         attackerId: order.countryId,
         attackerUnits: order.units,
         attackerMilTech: attackerCountry.tech.military,
+        attackerLogTech: attackerCountry.tech.logistics,
         defenderProvince: to,
         defenderMilTech: defenderCountry.tech.military,
         battleId: `btl_${state.totalDays}_${order.fromProvinceId}_${to.id}_${battles.length}`,
         isNavalAssault: order.isNaval,
         hasWaterStorm,
         attackerMinisterBonus: attMinBonus,
+        customBlueprints: state.customBlueprints,
       });
 
       battles.push(battleResult.event);
+      state.mapPulses = [
+        {
+          id: `pulse_btl_${battleResult.event.id}`,
+          kind: 'battle' as const,
+          centroid: battleResult.event.centroid,
+          color: battleResult.captured ? '#F59E0B' : '#EF4444',
+          label: to.name,
+          createdAt: Date.now(),
+        },
+        ...(state.mapPulses ?? []),
+      ].slice(0, 14);
 
       if (battleResult.captured) {
         const oldOwnerId = to.ownerId;
@@ -2140,6 +2673,12 @@ export function advanceDay(prevState: GameState, lang: Language = 'en'): GameSta
       state.chronicle.unshift(aiResult.chronicleEntries[i]);
     }
     state.orders.push(...aiResult.orders);
+  }
+
+  // Periodic Auto-Pilot daily strategic oversight (every 6 days)
+  if (state.autoPilotEnabled && state.gameMode === 'player' && state.totalDays % 6 === 0) {
+    const apRes = runAutoPilotCommand(state, lang, { allowAirlift: false });
+    Object.assign(state, apRes.state);
   }
 
   // Periodic Maritime Water Alerts update (every 18 days)
@@ -2280,21 +2819,58 @@ export function advanceDay(prevState: GameState, lang: Language = 'en'): GameSta
       };
     }
 
-    // Natural nuclear winter cooling
+    // Natural nuclear winter cooling & Global Warming Index update
     if (state.nuclearWinterLevel > 0) {
       state.nuclearWinterLevel = Math.max(0, state.nuclearWinterLevel - 2);
     }
 
-    // Province population growth & weather update
+    let factoryCount = 0;
+    let ecoWarmingOffset = 0;
     let idx = 0;
     for (const prov of Object.values(state.provinces)) {
+      if (prov.buildings.includes('factory')) factoryCount += 1;
       const growth = prov.buildings.includes('farm') ? 1.008 : 1.002;
       prov.population = Math.round(prov.population * growth);
-      prov.weather = computeProvinceWeather(prov.centroid, state.season, state.turn, idx++);
+      prov.weather = computeProvinceWeather(prov.centroid, state.season, state.turn, idx);
+      prov.temperatureC = computeProvinceTemperatureC({
+        centroid: prov.centroid,
+        season: state.season,
+        weather: prov.weather,
+        globalWarmingIndex: state.globalWarmingIndex,
+        nuclearWinterLevel: state.nuclearWinterLevel,
+        provSeedIndex: idx,
+        totalDays: state.totalDays,
+      });
+      idx++;
       if (prov.nuclearDevastation && prov.nuclearDevastation > 0) {
         prov.nuclearDevastation = Math.max(0, prov.nuclearDevastation - 4);
       }
+
+      // Extreme Cold (< -15°C) or Extreme Heat (> +38°C) attrition for un-supplied armies during war
+      const owner = state.countries[prov.ownerId];
+      if (owner && owner.atWarWith.length > 0 && !prov.assimilated) {
+        const attr = getExtremeClimateAttrition(
+          prov.temperatureC,
+          owner.tech.logistics,
+          owner.isPlayer && state.difficulty === 'world_conquest',
+        );
+        if (attr.attritionRate > 0 && getTotalUnits(prov.units) > 1200) {
+          prov.units = scaleUnits(prov.units, 1 - attr.attritionRate * 0.45);
+        }
+      }
     }
+    for (const c of Object.values(state.countries)) {
+      if (c.eliminated) continue;
+      if (c.unlockedTechs.includes('eco_fusion')) ecoWarmingOffset += 0.35;
+      if (c.megaprojects.includes('fusion_core')) ecoWarmingOffset += 0.45;
+      if (c.megaprojects.includes('deep_ocean_arcology')) ecoWarmingOffset += 0.3;
+    }
+    const greenCouncil = state.worldCouncil.passedEffects.includes('res_green_maritime') ? 0.5 : 0;
+    const rawWarmDelta = factoryCount * 0.045 - ecoWarmingOffset - greenCouncil + (state.nuclearWinterLevel > 20 ? -0.4 : 0.15);
+    state.globalWarmingIndex = Math.max(
+      0,
+      Math.min(100, Number(((state.globalWarmingIndex ?? 24) + rawWarmDelta).toFixed(1))),
+    );
 
     // Record Timelapse Snapshot
     const owners: Record<string, string> = {};
@@ -2309,10 +2885,17 @@ export function advanceDay(prevState: GameState, lang: Language = 'en'): GameSta
       state.timelapseSnapshots.shift();
     }
 
-    // Random Events every 3 months
+    // Random & Climate Events every 3 months
     if (state.turn % 3 === 0) {
+      const playerOwnedList = Object.values(state.provinces).filter(
+        (p) => p.ownerId === state.playerCountryId,
+      );
+      const eventTargetProv =
+        playerOwnedList[state.turn % Math.max(1, playerOwnedList.length)] ??
+        Object.values(state.provinces)[state.turn % Object.keys(state.provinces).length];
+      const forceClimate = (state.globalWarmingIndex ?? 0) >= 34 && state.turn % 6 === 0;
       if (isSpectator) {
-        const evt = buildPendingEvent(state.turn, lang);
+        const evt = buildPendingEvent(state.turn, lang, eventTargetProv, forceClimate);
         state.chronicle.unshift({
           id: `chr_gevt_${state.turn}`,
           turn: state.turn,
@@ -2325,16 +2908,87 @@ export function advanceDay(prevState: GameState, lang: Language = 'en'): GameSta
           countryIds: [],
         });
       } else if (!nextPendingEvent) {
-        nextPendingEvent = buildPendingEvent(state.turn, lang);
+        nextPendingEvent = buildPendingEvent(state.turn, lang, eventTargetProv, forceClimate);
       }
     }
   }
 
-  // 3. Check Victory / Defeat conditions
-  const summariesNow = computeCountrySummaries(state);
+  // 3. Check Victory / Defeat conditions & Extremely Easy+ Comeback Protocol
+  let summariesNow = computeCountrySummaries(state);
   const totalProvs = Object.keys(state.provinces).length;
   let outcome: GameState['outcome'] = 'ongoing';
   let peakAreaKm2 = prevState.peakAreaKm2;
+
+  if (!isSpectator && state.difficulty === 'extremely_easy_plus') {
+    const player = state.countries[state.playerCountryId];
+    const playerSum = summariesNow[state.playerCountryId];
+    const playerProvs = Object.values(state.provinces).filter((p) => p.ownerId === state.playerCountryId);
+    const originalCount = Math.max(
+      1,
+      Object.values(state.provinces).filter((p) => p.originalCountryId === state.playerCountryId).length,
+    );
+    const lostThreshold = Math.max(2, Math.floor(originalCount * 0.15));
+    const severelyReduced =
+      playerProvs.length > 0 &&
+      (playerProvs.length <= lostThreshold || (playerSum?.totalArmy ?? 0) < 4000);
+
+    if (
+      player &&
+      !player.eliminated &&
+      player.atWarWith.length > 0 &&
+      severelyReduced &&
+      state.totalDays - (state.lastComebackDay ?? -100) >= 30
+    ) {
+      const bastion = playerProvs.find((p) => p.isCapital) ?? playerProvs[0];
+      const scenario = SCENARIOS[state.scenarioId];
+      const primaryUnit = scenario.unitRoster[0]?.id ?? 'infantry';
+      const armorUnit = scenario.unitRoster[1]?.id ?? primaryUnit;
+      bastion.units[primaryUnit] = (bastion.units[primaryUnit] ?? 0) + 10000;
+      bastion.units[armorUnit] = (bastion.units[armorUnit] ?? 0) + 4000;
+
+      player.treasury = Number((player.treasury + 140).toFixed(1));
+      player.manpower = Math.min(player.maxManpower, player.manpower + 35000);
+      player.stability = Math.min(100, player.stability + 20);
+      player.movementPoints = player.maxMovementPoints;
+
+      state.comebackTriggeredCount = (state.comebackTriggeredCount ?? 0) + 1;
+      state.lastComebackDay = state.totalDays;
+      const now = Date.now();
+      state.mapPulses = [
+        {
+          id: `pulse_comeback_${now}`,
+          kind: 'comeback' as const,
+          centroid: bastion.centroid,
+          color: '#34D399',
+          label: 'COMEBACK +14K',
+          createdAt: now,
+        },
+        ...(state.mapPulses ?? []),
+      ].slice(0, 14);
+      state.notifications.unshift({
+        id: `notif_comeback_${now}`,
+        type: 'conquest',
+        title: lang === 'pl' ? 'Protokół Ratunkowy EXTREME EASY+!' : 'Emergency Comeback Protocol Activated!',
+        message:
+          lang === 'pl'
+            ? `+140 PLN, +35 000 rezerw oraz 14 000 elitarnych jednostek w ${bastion.name}!`
+            : `+140 PLN, +35,000 Manpower & 14,000 Elite Divisions deployed in ${bastion.name}!`,
+        createdAt: now,
+      });
+      state.chronicle.unshift({
+        id: `chr_comeback_${state.totalDays}`,
+        turn: state.turn,
+        day: state.day,
+        year: state.year,
+        monthIndex: state.monthIndex,
+        type: 'event',
+        title: lang === 'pl' ? 'Kontrofensywa Ratunkowa' : 'Emergency Comeback Protocol',
+        detail: `${player.displayName}: +14,000 elite troops & +140 PLN in ${bastion.name}`,
+        countryIds: [player.id],
+      });
+      summariesNow = computeCountrySummaries(state);
+    }
+  }
 
   if (isSpectator) {
     const leader = Object.values(summariesNow)

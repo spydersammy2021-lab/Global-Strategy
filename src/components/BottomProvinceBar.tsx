@@ -2,16 +2,20 @@ import React, { useState } from 'react';
 import {
   Anchor,
   ArrowRight,
+  Building2,
   Castle,
   Check,
   CheckCircle2,
   Factory,
+  Flame,
   GraduationCap,
   Rocket,
   Satellite,
   Shield,
   ShieldAlert,
   Swords,
+  Thermometer,
+  TrainFront,
   Trash2,
   UserPlus,
   Waves,
@@ -32,6 +36,7 @@ const BUILDING_LIST: BuildingType[] = [
   'barracks',
   'fort',
   'university',
+  'railway',
   'port',
   'coastal_defense',
   'missile_silo',
@@ -52,6 +57,8 @@ function BuildingSlotIcon({ type }: { type: BuildingType }) {
       return <Castle size={16} className="text-purple-400" />;
     case 'university':
       return <GraduationCap size={16} className="text-indigo-400" />;
+    case 'railway':
+      return <TrainFront size={16} className="text-yellow-400" />;
     case 'coastal_defense':
       return <Waves size={16} className="text-cyan-400" />;
     case 'missile_silo':
@@ -74,6 +81,7 @@ export function BottomProvinceBar({
   onBuild,
   onRecruit,
   onAssimilate,
+  onReconstructCity,
   onIssueOrder,
   onCancelOrder,
   t,
@@ -91,6 +99,7 @@ export function BottomProvinceBar({
   onBuild: (provId: string, b: BuildingType) => void;
   onRecruit: (provId: string, u: UnitType, count: number) => void;
   onAssimilate: (provId: string) => void;
+  onReconstructCity?: (provId: string) => void;
   onIssueOrder: (fromId: string, toId: string, ratio: number) => void;
   onCancelOrder: (orderId: string) => void;
   t: Translations;
@@ -123,15 +132,22 @@ export function BottomProvinceBar({
   const isNavalRoute = Boolean(
     targetProv && !prov.neighbors.includes(targetProv.id) && prov.seaNeighbors.includes(targetProv.id),
   );
+  const isRailRoute = Boolean(
+    !isNavalRoute &&
+      targetProv &&
+      prov.buildings.includes('railway') &&
+      targetProv.buildings.includes('railway'),
+  );
   const hasStormDelay = Boolean(
     isNavalRoute &&
       targetProv &&
       state.waterAlerts.some((w) => w.affectedProvinceIds.includes(targetProv.id)),
   );
-  const estDays = Math.max(
+  const baseDays = Math.max(
     2,
     (isNavalRoute ? 6 : 4) + (hasStormDelay ? 3 : 0) - Math.min(2, Math.floor(player.tech.logistics / 2)),
   );
+  const estDays = isRailRoute ? Math.max(1, Math.ceil(baseDays / 3)) : baseDays;
 
   const winChance =
     targetProv && targetProv.ownerId !== state.playerCountryId && splitPreview > 0
@@ -146,10 +162,19 @@ export function BottomProvinceBar({
 
   const provOrders = state.orders.filter((o) => o.fromProvinceId === prov.id);
   const weatherInfo = WEATHER_NAMES[lang][prov.weather];
+  const tempC = Math.round(prov.temperatureC ?? 14);
+  const hasExtremeClimateRisk =
+    (tempC <= -15 || tempC >= 38) &&
+    player.tech.logistics < 1 &&
+    state.difficulty !== 'world_conquest';
+
   const canNavalRecruit = prov.seaNeighbors.length > 0 || prov.buildings.includes('port');
+  const hasRailway = prov.buildings.includes('railway');
 
   const availableUnits = scenario.unitRoster.filter(
-    (spec) => !(spec.id === 'naval_fleet' && !canNavalRecruit),
+    (spec) =>
+      !(spec.id === 'naval_fleet' && !canNavalRecruit) &&
+      !(spec.id === 'armored_train' && !hasRailway),
   );
   const activeUnitSpec =
     availableUnits.find((u) => u.id === selectedUnitType) ?? availableUnits[0];
@@ -178,19 +203,24 @@ export function BottomProvinceBar({
   return (
     <div
       data-testid="bottom-province-bar"
-      className={`pointer-events-auto absolute bottom-3 -translate-x-1/2 z-20 flex flex-col gap-2 transition-[left] duration-150 ${
+      className={`pointer-events-auto absolute bottom-3 z-20 hidden md:flex flex-col gap-2 transition-all duration-150 ${
         hasLeftDrawerOpen
-          ? 'left-1/2 lg:left-[calc(50%+168px)] xl:left-[calc(50%+88px)] w-[min(94vw,820px)]'
-          : 'left-1/2 w-[min(94vw,860px)]'
+          ? 'left-[414px] right-[282px]'
+          : 'left-[64px] right-[282px] max-w-[840px] mx-auto'
       }`}
     >
-      {/* Expandable AoH3 March & Pre-War Battle Odds Tray */}
+      {/* Expandable March & Battle Odds Tray */}
       {marchMode && (
         <div className="rounded-xl border aoh-hud-panel p-3 shadow-2xl space-y-2.5">
           <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
             <span className="text-xs font-extrabold uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
               <ArrowRight size={14} />
               {t.marchTab}: {prov.name}
+              {isRailRoute && (
+                <span className="ml-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-yellow-500/20 border border-yellow-400/50 text-[10px] text-yellow-200">
+                  <TrainFront size={10} /> 3x RAIL
+                </span>
+              )}
             </span>
             <button
               type="button"
@@ -324,9 +354,8 @@ export function BottomProvinceBar({
         </div>
       )}
 
-      {/* Main Compact AoH3 Bottom Province Inspector Bar */}
+      {/* Main Compact V3.0 Bottom Province Inspector Bar */}
       <div className="rounded-xl border aoh-hud-panel shadow-2xl overflow-hidden">
-        {/* Top Metadata Strip: Flag, Province Name, Capital Crown, Pop/Eco/Def, Assimilate, Close */}
         <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 border-b border-amber-500/20 bg-slate-950/80">
           <div className="flex items-center gap-2.5 min-w-0">
             <FlagBadge flag={player.flag} width={26} height={17} />
@@ -352,6 +381,19 @@ export function BottomProvinceBar({
                     {t.assimilateBtn}
                   </button>
                 )}
+                {onReconstructCity && (
+                  <button
+                    type="button"
+                    data-testid="reconstruct-city-btn"
+                    disabled={player.treasury < 14}
+                    onClick={() => onReconstructCity(prov.id)}
+                    title="Reconstruct City & Infrastructure (+0.85 Eco, +2% Stability)"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 text-[10px] font-bold cursor-pointer whitespace-nowrap"
+                  >
+                    <Building2 size={10} />
+                    <span>{t.reconstructCityBtn}</span>
+                  </button>
+                )}
               </div>
               <div className="flex flex-wrap items-center gap-x-2.5 text-[10.5px] font-mono-num text-slate-300">
                 <span>{(prov.population / 1_000_000).toFixed(2)}M pop</span>
@@ -364,7 +406,18 @@ export function BottomProvinceBar({
                 <span className="text-slate-600">·</span>
                 <span className="text-rose-300 font-bold">⚔️ {totalGarrison.toLocaleString(numLocale)}</span>
                 <span className="text-slate-600">·</span>
-                <span className="text-sky-300">{weatherInfo.label}</span>
+                <span className="inline-flex items-center gap-1 text-sky-300">
+                  <Thermometer size={10} />
+                  {weatherInfo.label} · {tempC}°C
+                </span>
+                {hasExtremeClimateRisk && (
+                  <span
+                    data-testid="climate-attrition-warn"
+                    className="inline-flex items-center gap-0.5 text-orange-300 font-bold"
+                  >
+                    <Flame size={10} /> {t.climateAttritionWarn}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -408,8 +461,13 @@ export function BottomProvinceBar({
         )}
 
         {/* Bottom Body: Horizontal Row of Square Building Slots + Quick Recruitment & March Actions */}
-        <div className="p-2.5 sm:px-3.5 sm:py-2.5 flex flex-col md:flex-row md:items-center justify-between gap-3">
-          {/* Square Building Slots Row */}
+        <div
+          className={`p-2.5 sm:px-3 sm:py-2 flex gap-2.5 ${
+            hasLeftDrawerOpen
+              ? 'flex-col'
+              : 'flex-col xl:flex-row xl:items-center xl:justify-between'
+          }`}
+        >
           <div className="flex flex-col gap-1 min-w-0">
             <div className="flex items-center justify-between text-[10px] text-slate-400">
               <span className="font-bold uppercase tracking-wider text-slate-400">
@@ -421,7 +479,7 @@ export function BottomProvinceBar({
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-1 overflow-x-auto gs-scroll pb-0.5 md:pb-0">
+            <div className="flex flex-wrap items-center gap-1">
               {BUILDING_LIST.map((bType) => {
                 const info = BUILDING_NAMES[lang][bType];
                 const isBuilt = prov.buildings.includes(bType);
@@ -441,13 +499,14 @@ export function BottomProvinceBar({
                   <button
                     key={bType}
                     type="button"
+                    data-testid={`build-slot-${bType}`}
                     disabled={isBuilt || !canBuild}
                     onMouseEnter={() => setHoveredBuilding(bType)}
                     onMouseLeave={() => setHoveredBuilding(null)}
                     onClick={() => onBuild(prov.id, bType)}
                     title={`${info.name} (${isBuilt ? t.built : `${cost} PLN`}) — ${info.desc}`}
                     aria-label={`${info.name} ${isBuilt ? t.built : `${cost} PLN`}`}
-                    className={`relative h-9 w-9 shrink-0 rounded-lg border flex flex-col items-center justify-center transition-colors ${
+                    className={`relative h-8 w-8 shrink-0 rounded-lg border flex flex-col items-center justify-center transition-colors ${
                       isBuilt
                         ? 'border-emerald-500/65 bg-emerald-950/35 cursor-default'
                         : canBuild
@@ -471,13 +530,18 @@ export function BottomProvinceBar({
             </div>
           </div>
 
-          {/* Quick Recruit + March Command Strip */}
-          <div className="flex flex-wrap items-center gap-1.5 shrink-0 border-t md:border-t-0 md:border-l border-slate-800/80 pt-2 md:pt-0 md:pl-2.5">
+          <div
+            className={`flex flex-wrap items-center gap-1.5 shrink-0 ${
+              hasLeftDrawerOpen
+                ? 'border-t border-slate-800/80 pt-2'
+                : 'border-t xl:border-t-0 xl:border-l border-slate-800/80 pt-2 xl:pt-0 xl:pl-2.5'
+            }`}
+          >
             <select
               value={activeUnitSpec?.id ?? 'infantry'}
               onChange={(e) => setSelectedUnitType(e.target.value as UnitType)}
               aria-label={t.recruitTab}
-              className="rounded-lg border border-slate-700 bg-slate-950 px-1.5 py-1.5 text-[11px] font-semibold text-white focus:border-amber-400 focus:outline-none max-w-[106px]"
+              className="rounded-lg border border-slate-700 bg-slate-950 px-1.5 py-1.5 text-[11px] font-semibold text-white focus:border-amber-400 focus:outline-none max-w-[110px]"
             >
               {availableUnits.map((spec) => (
                 <option key={spec.id} value={spec.id}>

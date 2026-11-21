@@ -1,5 +1,7 @@
 import type { EffectiveTier, PerformanceMode } from './types';
 
+export type FpsCap = 60 | 120 | 144 | 'unlimited';
+
 export interface HardwareProfile {
   cores: number;
   memoryGb: number | null;
@@ -46,6 +48,11 @@ export function resolveEffectiveTier(
     return profile.recommendedTier === 'light' ? 'light' : 'medium';
   }
   return profile.recommendedTier;
+}
+
+export function getFpsCapIntervalMs(cap: FpsCap): number {
+  if (cap === 'unlimited') return 0;
+  return 1000 / cap;
 }
 
 export function glassClass(tier: EffectiveTier): string {

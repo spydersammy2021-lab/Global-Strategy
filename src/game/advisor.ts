@@ -16,6 +16,55 @@ const REGION_NAMES: Record<Language, Record<'baltic' | 'atlantic' | 'mediterrane
   csb: { baltic: 'Bôłce', atlantic: 'Atlantëkù', mediterranean: 'Strzódzemnym', pacific: 'Pacyfikù' },
 };
 
+export function isSpeechSupported(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.speechSynthesis !== 'undefined' &&
+    typeof SpeechSynthesisUtterance !== 'undefined'
+  );
+}
+
+export function stopAdvisorSpeech(): void {
+  if (!isSpeechSupported()) return;
+  try {
+    window.speechSynthesis.cancel();
+  } catch {
+    // ignore speech cancel errors
+  }
+}
+
+export function speakAdvisorLine(
+  text: string,
+  opts: {
+    lang: Language;
+    voiceEnabled: boolean;
+    muted?: boolean;
+    onStart?: () => void;
+    onEnd?: () => void;
+  },
+): boolean {
+  if (!opts.voiceEnabled || opts.muted || !text.trim() || !isSpeechSupported()) {
+    return false;
+  }
+  try {
+    const synth = window.speechSynthesis;
+    synth.cancel();
+    const utt = new SpeechSynthesisUtterance(text);
+    utt.lang = opts.lang === 'pl' || opts.lang === 'szl' || opts.lang === 'csb' ? 'pl-PL' : 'en-US';
+    utt.rate = 1.04;
+    utt.pitch = 0.98;
+    utt.volume = 0.85;
+    utt.onstart = () => opts.onStart?.();
+    utt.onend = () => opts.onEnd?.();
+    utt.onerror = () => opts.onEnd?.();
+    synth.speak(utt);
+    return true;
+  } catch {
+    opts.onEnd?.();
+    return false;
+  }
+}
+
 // Deterministic local Tactical AI Advisor (zero external API keys required)
 export function analyzeTacticalSituation(state: GameState, lang: Language = 'en'): TacticalAdvice {
   if (state.gameMode === 'bot_spectator') {
@@ -47,7 +96,31 @@ export function analyzeTacticalSituation(state: GameState, lang: Language = 'en'
   const mySum = sums[player.id];
   const myProvs = Object.values(state.provinces).filter((p) => p.ownerId === player.id);
 
-  // 1. Check critical maritime Water Alert affecting player coastal provinces
+  // 0. Auto-Pilot Command Briefing
+  if (state.autoPilotEnabled) {
+    return {
+      severity: 'opportunity',
+      headline: lang === 'pl' ? 'Auto-Pilot Dowództwa Aktywny' : 'AI Supreme Commander Online',
+      body:
+        lang === 'pl'
+          ? `Auto-Pilot zarządza rekrutacją, technologią i mostami powietrznymi dla ${player.displayName}. Skarbiec: ${player.treasury.toFixed(1)} PLN.`
+          : `Auto-Pilot is actively managing economy, tech, and 5-second emergency airlifts for ${player.displayName}. Treasury: ${player.treasury.toFixed(1)} PLN.`,
+    };
+  }
+
+  // 1. Critical Global Warming Warning
+  if ((state.globalWarmingIndex ?? 0) >= 65) {
+    return {
+      severity: 'warning',
+      headline: lang === 'pl' ? 'Alert Klimatyczny Planety' : 'Climate Thermal Threshold Alert',
+      body:
+        lang === 'pl'
+          ? `Indeks Globalnego Ocieplenia osiągnął ${Math.round(state.globalWarmingIndex)}/100. Spodziewaj się susz i sztormów — uchwal Czyste Traktaty w Radzie Świata.`
+          : `Global Warming Index reached ${Math.round(state.globalWarmingIndex)}/100. Coastal surges and droughts threaten provincial output.`,
+    };
+  }
+
+  // 2. Check critical maritime Water Alert affecting player coastal provinces
   const localAlert = state.waterAlerts.find((wa) =>
     wa.affectedProvinceIds.some((pid) => state.provinces[pid]?.ownerId === player.id),
   );
@@ -63,7 +136,7 @@ export function analyzeTacticalSituation(state: GameState, lang: Language = 'en'
     };
   }
 
-  // 2. Check active war balance
+  // 3. Check active war balance
   if (player.atWarWith.length > 0) {
     const strongestEnemyId = [...player.atWarWith].sort(
       (a, b) => (sums[b]?.totalArmy ?? 0) - (sums[a]?.totalArmy ?? 0),
@@ -78,7 +151,7 @@ export function analyzeTacticalSituation(state: GameState, lang: Language = 'en'
         body:
           lang === 'pl'
             ? `Wróg ma ${enemySum.totalArmy.toLocaleString('en-US')} wojsk wobec Twoich ${mySum.totalArmy.toLocaleString('en-US')}. Buduj forty i rekrutuj w prowincjach przyfrontowych!`
-            : `Enemy fields ${enemySum.totalArmy.toLocaleString('en-US')} vs your ${mySum.totalArmy.toLocaleString('en-US')}. Build Fortresses on border provinces or seek allies!`,
+            : `Enemy fields ${enemySum.totalArmy.toLocaleString('en-US')} vs your ${mySum.totalArmy.toLocaleString('en-US')}. Build Fortresses on border provinces or enable Auto-Pilot!`,
       };
     }
 
@@ -92,7 +165,7 @@ export function analyzeTacticalSituation(state: GameState, lang: Language = 'en'
     };
   }
 
-  // 3. Check unassimilated provinces
+  // 4. Check unassimilated provinces
   const unassimilated = myProvs.find((p) => !p.assimilated);
   if (unassimilated && player.treasury >= 10) {
     return {
@@ -105,7 +178,7 @@ export function analyzeTacticalSituation(state: GameState, lang: Language = 'en'
     };
   }
 
-  // 4. Check Research Opportunity in Visual Tech Tree
+  // 5. Check Research Opportunity in Visual Tech Tree
   const unlockable = TECH_TREE_NODES.find(
     (n) => canUnlockTechNode(player.unlockedTechs, n.id) && player.researchPoints >= n.costRp,
   );
@@ -120,7 +193,7 @@ export function analyzeTacticalSituation(state: GameState, lang: Language = 'en'
     };
   }
 
-  // 5. Check Nuclear Winter or Negative Treasury
+  // 6. Check Nuclear Winter or Negative Treasury
   if (state.nuclearWinterLevel >= 20) {
     return {
       severity: 'critical',
@@ -143,7 +216,7 @@ export function analyzeTacticalSituation(state: GameState, lang: Language = 'en'
     };
   }
 
-  // 6. Default growth advice
+  // 7. Default growth advice
   return {
     severity: 'steady',
     headline: lang === 'pl' ? 'Sytuacja Stabilna — Rozbudowa' : 'Strategic Readiness Nominal',

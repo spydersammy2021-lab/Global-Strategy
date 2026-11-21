@@ -105,7 +105,7 @@ export function LeftToolbar({
   return (
     <aside
       aria-label="Grand Strategy Command Rail"
-      className="pointer-events-auto absolute top-4 left-2.5 z-20 flex flex-col gap-1.5"
+      className="pointer-events-auto absolute top-4 left-2.5 z-20 hidden md:flex flex-col gap-1.5"
     >
       {buttons
         .filter((b) => !(isSpectator && b.hiddenInSpectator))

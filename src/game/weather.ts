@@ -54,6 +54,106 @@ export function computeProvinceWeather(
   return 'sunny';
 }
 
+/**
+ * VERSION 3.0 Live Regional Temperature Engine (°C)
+ * Calculates province temperature from equirectangular latitude, continental interior offset,
+ * season (hemisphere-aware!), Global Warming Index, Nuclear Winter cooling, and weather.
+ */
+export function computeProvinceTemperatureC(params: {
+  centroid: [number, number];
+  season: SeasonId;
+  weather: WeatherKind;
+  globalWarmingIndex?: number;
+  nuclearWinterLevel?: number;
+  provSeedIndex?: number;
+  totalDays?: number;
+}): number {
+  const {
+    centroid,
+    season,
+    weather,
+    globalWarmingIndex = 28,
+    nuclearWinterLevel = 0,
+    provSeedIndex = 0,
+    totalDays = 0,
+  } = params;
+
+  const lonFrac = centroid[0] / WORLD_WIDTH;
+  const latFrac = centroid[1] / WORLD_HEIGHT; // 0 = 90N, 0.5 = Equator, 1 = 90S
+  const approxLatDeg = (0.5 - latFrac) * 180; // +90N .. -90S
+  const absLat = Math.abs(approxLatDeg);
+
+  // Mean annual baseline from equator (~29°C) toward poles (~ -24°C)
+  let temp = 30 - (absLat / 90) * 56;
+
+  // Northern/Southern Hemisphere seasonal swing (stronger inland & higher latitudes)
+  const isNorth = approxLatDeg >= 0;
+  const latSwingScale = Math.min(1.45, absLat / 42);
+  let seasonDelta = 0;
+  if (season === 'summer') seasonDelta = (isNorth ? 14 : -13) * latSwingScale;
+  else if (season === 'winter') seasonDelta = (isNorth ? -18 : 13) * latSwingScale;
+  else if (season === 'spring') seasonDelta = (isNorth ? 1 : -1) * latSwingScale;
+  else seasonDelta = (isNorth ? 0 : 1) * latSwingScale;
+
+  // Subtropical arid belt boost (Sahara / Arabia / Australian Outback)
+  const isSaharaBelt = approxLatDeg >= 15 && approxLatDeg <= 32 && lonFrac >= 0.44 && lonFrac <= 0.67;
+  if (isSaharaBelt) temp += 10;
+
+  // Siberian / Arctic continental chill
+  const isSiberia = approxLatDeg >= 53 && lonFrac >= 0.66;
+  if (isSiberia && season === 'winter') temp -= 13;
+
+  // Weather micro-shift
+  if (weather === 'snow') temp -= 6;
+  else if (weather === 'rain') temp -= 2;
+  else if (weather === 'sunny') temp += 2.5;
+
+  // Global Warming anomaly & Nuclear Winter drop
+  const warmingDelta = ((globalWarmingIndex - 24) / 76) * 4.8;
+  const winterDrop = -(nuclearWinterLevel / 100) * 16;
+
+  // Subtle daily local variance (-1.5 .. +1.5)
+  const dailyVar = (deterministicHash(totalDays * 13 + provSeedIndex * 29) - 0.5) * 3;
+
+  const finalTemp = temp + seasonDelta + warmingDelta + winterDrop + dailyVar;
+  return Math.max(-42, Math.min(48, Math.round(finalTemp)));
+}
+
+// Smooth thermal color ramp from Icy Arctic Blue (-32°C) to Desert Crimson (+44°C)
+export function temperatureToHex(tempC: number): string {
+  if (tempC <= -20) return '#1D4ED8'; // Deep Arctic Cobalt
+  if (tempC <= -10) return '#0284C7'; // Glacial Blue
+  if (tempC <= 0) return '#06B6D4'; // Frost Cyan
+  if (tempC <= 10) return '#0D9488'; // Cool Teal
+  if (tempC <= 20) return '#16A34A'; // Temperate Emerald
+  if (tempC <= 28) return '#CA8A04'; // Warm Ochre
+  if (tempC <= 36) return '#EA580C'; // Torrid Orange
+  return '#DC2626'; // Extreme Desert Crimson
+}
+
+// Extreme Climate Attrition: < -15°C or > +38°C penalizes forces lacking Logistics Tech >= 1
+export function getExtremeClimateAttrition(
+  tempC: number,
+  logisticsTech: number,
+  isWorldConquest = false,
+): { isExtreme: boolean; label: 'cold' | 'heat' | 'mild'; attritionRate: number; combatMult: number } {
+  if (isWorldConquest || logisticsTech >= 1) {
+    return {
+      isExtreme: tempC < -15 || tempC > 38,
+      label: tempC < -15 ? 'cold' : tempC > 38 ? 'heat' : 'mild',
+      attritionRate: 0,
+      combatMult: 1.0,
+    };
+  }
+  if (tempC < -15) {
+    return { isExtreme: true, label: 'cold', attritionRate: 0.06, combatMult: 0.88 };
+  }
+  if (tempC > 38) {
+    return { isExtreme: true, label: 'heat', attritionRate: 0.055, combatMult: 0.89 };
+  }
+  return { isExtreme: false, label: 'mild', attritionRate: 0, combatMult: 1.0 };
+}
+
 // Generate dynamic Maritime Water Alerts (severe sea storms & coastal floods)
 export function generateWaterAlerts(
   provinces: Record<string, ProvinceState>,

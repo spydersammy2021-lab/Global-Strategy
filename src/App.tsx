@@ -8,6 +8,7 @@ import { LeaderboardChronicleModal, type ModalTab } from './components/Leaderboa
 import { LeftSlideDrawer } from './components/LeftSlideDrawer';
 import { type LeftDrawerId, LeftToolbar } from './components/LeftToolbar';
 import { MainMenu } from './components/MainMenu';
+import { MobileCommandHud } from './components/MobileCommandHud';
 import { NotificationStack } from './components/NotificationStack';
 import { RandomEventModal } from './components/RandomEventModal';
 import { SaveLoadModal } from './components/SaveLoadModal';
@@ -28,6 +29,7 @@ import {
   recordHallOfFameEntry,
   saveStoredAccount,
 } from './game/account';
+import { speakAdvisorLine } from './game/advisor';
 import { soundEngine } from './game/audio';
 import { computeCountrySummaries, splitUnitsByRatio } from './game/combat';
 import {
@@ -44,38 +46,47 @@ import {
   constructBuilding,
   createNewGame,
   deploySpy,
+  designCustomUnit,
   executeBlackOp,
   fundSpaceOceanColony,
   issueArmyOrder,
+  launchSpySatellite,
   launchStrategicStrike,
   planTechTreePath,
   proposeDiplomacy,
+  reconstructProvinceCity,
   recruitUnits,
   repayLoan,
   researchTechNode,
   resolveRandomEvent,
   setTaxRate,
   takeBankLoan,
+  toggleAutoPilot,
+  toggleStraitBlockade,
   tradeMarketResource,
+  triggerAutoPilotAirliftNow,
   voteWorldCouncil,
 } from './game/engine';
-import { detectHardwareProfile, resolveEffectiveTier } from './game/performance';
+import { type FpsCap, detectHardwareProfile, resolveEffectiveTier } from './game/performance';
 import type {
   BattleEvent,
   BlocksAccount,
   BuildingType,
   CommodityId,
   CustomScenarioConfig,
+  CustomUnitCategory,
   DifficultyId,
   GameMode,
   GameState,
   IdeologyId,
   Language,
+  MapOverlayMode,
   MegaprojectId,
   MinisterRole,
   PerformanceMode,
   ScenarioId,
   SimSpeed,
+  StraitBlockadeId,
   TechNodeId,
   UiMode,
   UnitType,
@@ -87,6 +98,8 @@ type ShellScreen = 'splash' | 'menu' | 'playing';
 const TUTORIAL_SEEN_KEY = 'blocks_gs_tutorial_seen_v1';
 const LANG_KEY = 'blocks_gs_lang_v1';
 const ADVISOR_KEY = 'blocks_gs_advisor_enabled_v1';
+const VOICE_KEY = 'gs_apex_voice_enabled';
+const FPS_CAP_KEY = 'gs_apex_fps_cap';
 const UI_MODE_KEY = 'gs_ui_mode_v1';
 
 const SIM_DELAY_MS: Record<SimSpeed, number> = {
@@ -133,6 +146,24 @@ export default function App() {
       return true;
     }
   });
+  const [voiceEnabled, setVoiceEnabled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(VOICE_KEY) !== '0';
+    } catch {
+      return true;
+    }
+  });
+  const [fpsCap, setFpsCap] = useState<FpsCap>(() => {
+    try {
+      const saved = localStorage.getItem(FPS_CAP_KEY);
+      if (saved === '60') return 60;
+      if (saved === '120') return 120;
+      if (saved === '144') return 144;
+      return 'unlimited';
+    } catch {
+      return 'unlimited';
+    }
+  });
   const [account, setAccount] = useState<BlocksAccount>(
     () => loadActiveAccount() ?? createGuestAccount(),
   );
@@ -164,6 +195,8 @@ export default function App() {
   const [activeBattles, setActiveBattles] = useState<BattleEvent[]>([]);
   const [focusTarget, setFocusTarget] = useState<[number, number] | null>(null);
   const [selectedCityId, setSelectedCityId] = useState<string | null>(null);
+  const [mapOverlayMode, setMapOverlayMode] = useState<MapOverlayMode>('political');
+  const [autoPilotCountdownSec, setAutoPilotCountdownSec] = useState<number | null>(null);
 
   // Modals
   const [accountOpen, setAccountOpen] = useState(false);
@@ -233,6 +266,27 @@ export default function App() {
       }
       return next;
     });
+  };
+
+  const handleToggleVoice = () => {
+    setVoiceEnabled((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(VOICE_KEY, next ? '1' : '0');
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
+
+  const handleChangeFpsCap = (nextCap: FpsCap) => {
+    setFpsCap(nextCap);
+    try {
+      localStorage.setItem(FPS_CAP_KEY, String(nextCap));
+    } catch {
+      // ignore
+    }
   };
 
   const handleChangePerfMode = (nextMode: PerformanceMode) => {
@@ -423,64 +477,161 @@ export default function App() {
     const timer = window.setInterval(() => {
       setGameState((prev) => {
         if (!prev || prev.outcome !== 'ongoing' || prev.simPaused) return prev;
-        const next = advanceDay(prev, lang);
         prevStateRef.current = prev;
-
-        if (next.battlesFought > prev.battlesFought && next.recentBattles.length > 0) {
-          if (next.gameMode === 'player') {
-            soundEngine.playSwordClash();
-          }
-          setActiveBattles(next.recentBattles.slice(0, 6));
-          window.setTimeout(() => {
-            setActiveBattles([]);
-          }, 2600);
-        } else if (next.turn > prev.turn && next.gameMode === 'player') {
-          soundEngine.playTurnAdvance();
-        }
-
-        if (
-          next.gameMode === 'player' &&
-          (next.turn > prev.turn || next.outcome !== prev.outcome)
-        ) {
-          const sums = computeCountrySummaries(next);
-          const mySum = sums[next.playerCountryId];
-          const myArea = mySum?.areaKm2 ?? 0;
-          const myCountry = next.countries[next.playerCountryId];
-          setAccount((prevAcc) => {
-            const updatedAcc: BlocksAccount = {
-              ...prevAcc,
-              stats: {
-                turnsPlayed: prevAcc.stats.turnsPlayed + (next.turn - prev.turn),
-                warsWon: prevAcc.stats.warsWon + Math.max(0, next.warsWon - prev.warsWon),
-                largestAreaKm2: Math.max(prevAcc.stats.largestAreaKm2, myArea),
-                campaignsCompleted:
-                  prevAcc.stats.campaignsCompleted + (next.outcome === 'victory' ? 1 : 0),
-              },
-            };
-            if (!updatedAcc.isGuest) {
-              saveStoredAccount(updatedAcc);
-              if (myCountry && mySum) {
-                recordHallOfFameEntry({
-                  accountId: updatedAcc.id,
-                  nickname: updatedAcc.nickname,
-                  countryName: myCountry.displayName,
-                  scenarioId: next.scenarioId,
-                  turn: next.turn,
-                  areaKm2: mySum.areaKm2,
-                  powerScore: mySum.powerScore,
-                });
-              }
-            }
-            return updatedAcc;
-          });
-        }
-
-        return next;
+        return advanceDay(prev, lang);
       });
     }, delayMs);
 
     return () => window.clearInterval(timer);
   }, [screen, gameState?.simPaused, gameState?.simSpeed, gameState?.outcome, anyBlockingModalOpen, lang]);
+
+  // Post-transition audio, battle banners, and Blocks™ account stats sync
+  useEffect(() => {
+    const prev = prevStateRef.current;
+    const next = gameState;
+    if (!prev || !next || prev === next) return;
+    prevStateRef.current = null;
+
+    let clearTimer: number | null = null;
+    if (next.battlesFought > prev.battlesFought && next.recentBattles.length > 0) {
+      if (next.gameMode === 'player') {
+        soundEngine.playSwordClash();
+      }
+      setActiveBattles(next.recentBattles.slice(0, 6));
+      clearTimer = window.setTimeout(() => {
+        setActiveBattles([]);
+      }, 2600);
+    } else if (next.turn > prev.turn && next.gameMode === 'player') {
+      soundEngine.playTurnAdvance();
+    }
+
+    if (
+      next.gameMode === 'player' &&
+      (next.turn > prev.turn || next.outcome !== prev.outcome)
+    ) {
+      const sums = computeCountrySummaries(next);
+      const mySum = sums[next.playerCountryId];
+      const myArea = mySum?.areaKm2 ?? 0;
+      const myCountry = next.countries[next.playerCountryId];
+      setAccount((prevAcc) => {
+        const updatedAcc: BlocksAccount = {
+          ...prevAcc,
+          stats: {
+            turnsPlayed: prevAcc.stats.turnsPlayed + Math.max(0, next.turn - prev.turn),
+            warsWon: prevAcc.stats.warsWon + Math.max(0, next.warsWon - prev.warsWon),
+            largestAreaKm2: Math.max(prevAcc.stats.largestAreaKm2, myArea),
+            campaignsCompleted:
+              prevAcc.stats.campaignsCompleted + (next.outcome === 'victory' ? 1 : 0),
+          },
+        };
+        if (!updatedAcc.isGuest) {
+          saveStoredAccount(updatedAcc);
+          if (myCountry && mySum) {
+            recordHallOfFameEntry({
+              accountId: updatedAcc.id,
+              nickname: updatedAcc.nickname,
+              countryName: myCountry.displayName,
+              scenarioId: next.scenarioId,
+              turn: next.turn,
+              areaKm2: mySum.areaKm2,
+              powerScore: mySum.powerScore,
+            });
+          }
+        }
+        return updatedAcc;
+      });
+    }
+
+    return clearTimer !== null ? () => window.clearTimeout(clearTimer!) : undefined;
+  }, [gameState]);
+
+  // 5-Second Rapid Auto-Pilot Emergency Airlift & Strategic Command Interval
+  useEffect(() => {
+    if (
+      screen !== 'playing' ||
+      !gameState ||
+      !gameState.autoPilotEnabled ||
+      gameState.gameMode !== 'player' ||
+      gameState.outcome !== 'ongoing' ||
+      gameState.simPaused ||
+      anyBlockingModalOpen
+    ) {
+      return;
+    }
+
+    const runAirliftCycle = () => {
+      setGameState((prev) => {
+        if (!prev || !prev.autoPilotEnabled || prev.simPaused || prev.outcome !== 'ongoing') {
+          return prev;
+        }
+        const res = triggerAutoPilotAirliftNow(prev, lang);
+        if (res.didAirlift) {
+          soundEngine.playAirliftJet();
+          if (advisorEnabled && voiceEnabled && res.summaryAction) {
+            speakAdvisorLine(res.summaryAction, {
+              lang,
+              voiceEnabled,
+              muted,
+            });
+          }
+        }
+        return res.state;
+      });
+    };
+
+    const airliftTimer = window.setInterval(runAirliftCycle, 5000);
+    return () => window.clearInterval(airliftTimer);
+  }, [
+    screen,
+    gameState?.autoPilotEnabled,
+    gameState?.gameMode,
+    gameState?.outcome,
+    gameState?.simPaused,
+    anyBlockingModalOpen,
+    lang,
+    advisorEnabled,
+    voiceEnabled,
+    muted,
+  ]);
+
+  // Live 5s Emergency Airlift Countdown Ticker (VERSION 3.0)
+  useEffect(() => {
+    if (
+      screen !== 'playing' ||
+      !gameState ||
+      !gameState.autoPilotEnabled ||
+      gameState.gameMode !== 'player' ||
+      gameState.outcome !== 'ongoing' ||
+      gameState.simPaused ||
+      anyBlockingModalOpen ||
+      !gameState.autoPilotNextAirliftAt
+    ) {
+      setAutoPilotCountdownSec(null);
+      return;
+    }
+
+    const syncCountdown = () => {
+      const targetAt = gameState.autoPilotNextAirliftAt ?? 0;
+      if (!targetAt) {
+        setAutoPilotCountdownSec(null);
+        return;
+      }
+      const rem = Math.max(1, Math.min(5, Math.ceil((targetAt - Date.now()) / 1000)));
+      setAutoPilotCountdownSec(rem);
+    };
+
+    syncCountdown();
+    const ticker = window.setInterval(syncCountdown, 250);
+    return () => window.clearInterval(ticker);
+  }, [
+    screen,
+    gameState?.autoPilotEnabled,
+    gameState?.autoPilotNextAirliftAt,
+    gameState?.gameMode,
+    gameState?.outcome,
+    gameState?.simPaused,
+    anyBlockingModalOpen,
+  ]);
 
   const pushToastError = (msg: string) => {
     setGameState((prev) => {
@@ -509,6 +660,18 @@ export default function App() {
   const handleSetSimSpeed = (speed: SimSpeed) => {
     soundEngine.playClick();
     setGameState((prev) => (prev ? { ...prev, simSpeed: speed, simPaused: false } : prev));
+  };
+
+  const handleToggleAutoPilot = () => {
+    soundEngine.playClick();
+    setGameState((prev) => {
+      if (!prev) return prev;
+      const toggled = toggleAutoPilot(prev);
+      if (toggled.autoPilotEnabled && advisorEnabled && voiceEnabled) {
+        speakAdvisorLine(t.autoPilotActive, { lang, voiceEnabled, muted });
+      }
+      return toggled;
+    });
   };
 
   const handleToggleDrawer = (drawer: Exclude<LeftDrawerId, null>) => {
@@ -701,6 +864,54 @@ export default function App() {
     setGameState(res.state);
   };
 
+  const handleDesignCustomUnit = (category: CustomUnitCategory, name: string) => {
+    if (!gameState) return;
+    const res = designCustomUnit(
+      gameState,
+      { name, category, armor: 8, speed: 7, firepower: 9 },
+      lang,
+    );
+    if (res.error) {
+      pushToastError(res.error);
+      return;
+    }
+    soundEngine.playBuildOrRecruit();
+    setGameState(res.state);
+  };
+
+  const handleLaunchSpySatellite = (targetId: string) => {
+    if (!gameState) return;
+    const res = launchSpySatellite(gameState, targetId, lang);
+    if (res.error) {
+      pushToastError(res.error);
+      return;
+    }
+    soundEngine.playAirliftJet();
+    setGameState(res.state);
+  };
+
+  const handleToggleStraitBlockade = (straitId: StraitBlockadeId) => {
+    if (!gameState) return;
+    const res = toggleStraitBlockade(gameState, straitId, lang);
+    if (res.error) {
+      pushToastError(res.error);
+      return;
+    }
+    soundEngine.playBuildOrRecruit();
+    setGameState(res.state);
+  };
+
+  const handleReconstructCity = (provId: string) => {
+    if (!gameState) return;
+    const res = reconstructProvinceCity(gameState, provId, lang);
+    if (res.error) {
+      pushToastError(res.error);
+      return;
+    }
+    soundEngine.playBuildOrRecruit();
+    setGameState(res.state);
+  };
+
   const handleAppointMinister = (role: MinisterRole, ministerId: string) => {
     if (!gameState) return;
     const res = appointMinister(gameState, role, ministerId);
@@ -862,6 +1073,7 @@ export default function App() {
           t={t}
           lang={lang}
           effectiveTier={effectiveTier}
+          fpsCap={fpsCap}
         />
       )}
 
@@ -876,11 +1088,16 @@ export default function App() {
             lang={lang}
             muted={muted}
             effectiveTier={effectiveTier}
+            fpsCap={fpsCap}
             uiMode={uiMode}
+            mapOverlayMode={mapOverlayMode}
+            autoPilotCountdownSec={autoPilotCountdownSec}
+            onChangeMapOverlay={setMapOverlayMode}
             onChangeUiMode={handleChangeUiMode}
             fpsDomRef={fpsDomRef}
             onToggleSimPause={handleToggleSimPause}
             onSetSimSpeed={handleSetSimSpeed}
+            onToggleAutoPilot={handleToggleAutoPilot}
             onOpenBudgetDrawer={() => handleToggleDrawer('budget')}
             onOpenTechTree={() => setTechTreeOpen(true)}
             onOpenLeaderboard={() => {
@@ -896,6 +1113,42 @@ export default function App() {
             onBackToMenu={() => setScreen('menu')}
           />
 
+          <MobileCommandHud
+            gameState={gameState}
+            summaries={summaries}
+            selectedProvinceId={selectedProvinceId}
+            marchMode={marchMode}
+            muted={muted}
+            mapOverlayMode={mapOverlayMode}
+            autoPilotCountdownSec={autoPilotCountdownSec}
+            onChangeMapOverlay={setMapOverlayMode}
+            onToggleSimPause={handleToggleSimPause}
+            onSetSimSpeed={handleSetSimSpeed}
+            onToggleAutoPilot={handleToggleAutoPilot}
+            onSetMarchMode={setMarchMode}
+            onRecruit={handleRecruit}
+            onBuild={handleBuild}
+            onAssimilate={handleAssimilate}
+            onIssueOrder={handleIssueOrder}
+            onDiplomacy={handleDiplomacy}
+            onOpenTechTree={() => setTechTreeOpen(true)}
+            onOpenSpaceOcean={() => setSpaceOceanOpen(true)}
+            onOpenCouncil={() => setCouncilOpen(true)}
+            onOpenBudgetDrawer={() => handleToggleDrawer('budget')}
+            onOpenLeaderboard={() => {
+              setLeaderboardInitialTab('powers');
+              setLeaderboardOpen(true);
+            }}
+            onOpenSaveLoad={() => setSaveLoadOpen(true)}
+            onOpenSettings={() => setSettingsOpen(true)}
+            onOpenTutorial={() => setTutorialOpen(true)}
+            onOpenAccount={() => setAccountOpen(true)}
+            onToggleMute={handleToggleMute}
+            onBackToMenu={() => setScreen('menu')}
+            t={t}
+            lang={lang}
+          />
+
           {/* Full-Bleed Edge-to-Edge AoH3 World Map Viewport */}
           <div className="relative flex-1 min-h-0 overflow-hidden">
             <WorldMapCanvas
@@ -903,14 +1156,18 @@ export default function App() {
               lang={lang}
               selectedProvinceId={selectedProvinceId}
               marchSourceProvinceId={marchMode ? selectedProvinceId : null}
+              mapOverlayMode={mapOverlayMode}
               onSelectProvince={handleSelectProvince}
               onSelectCity={(cityId) => setSelectedCityId(cityId)}
+              onToggleStraitBlockade={handleToggleStraitBlockade}
               activeBattles={activeBattles}
               perfMode={perfMode}
               effectiveTier={effectiveTier}
+              fpsCap={fpsCap}
               onLowFpsDetected={() => setAutoDowngradeSteps((s) => Math.min(2, s + 1))}
               focusTarget={focusTarget}
               fpsDomRef={fpsDomRef}
+              modalOpen={anyBlockingModalOpen}
             />
 
             {/* Left Vertical AoH3 Command Rail */}
@@ -924,7 +1181,7 @@ export default function App() {
               t={t}
             />
 
-            {/* Left Slide-Out Management Drawer (Replaces Permanent Right Sidebar) */}
+            {/* Left Slide-Out Management Drawer */}
             <LeftSlideDrawer
               activeDrawer={activeDrawer}
               onClose={() => setActiveDrawer(null)}
@@ -934,8 +1191,11 @@ export default function App() {
               onSelectCountry={handleSelectCountryFromPanel}
               onDiplomacy={handleDiplomacy}
               onDeploySpy={handleDeploySpy}
+              onLaunchSpySatellite={handleLaunchSpySatellite}
               onBlackOp={handleBlackOp}
               onStrategicStrike={handleStrategicStrike}
+              onDesignCustomUnit={handleDesignCustomUnit}
+              onToggleStraitBlockade={handleToggleStraitBlockade}
               onOpenLeaderboard={() => {
                 setLeaderboardInitialTab('chronicle');
                 setLeaderboardOpen(true);
@@ -969,6 +1229,7 @@ export default function App() {
                 onBuild={handleBuild}
                 onRecruit={handleRecruit}
                 onAssimilate={handleAssimilate}
+                onReconstructCity={handleReconstructCity}
                 onIssueOrder={handleIssueOrder}
                 onCancelOrder={handleCancelOrder}
                 t={t}
@@ -976,11 +1237,14 @@ export default function App() {
               />
             )}
 
-            {/* Optional Corner Tactical AI Advisor */}
+            {/* Speaking Voice Tactical AI Advisor */}
             <TacticalAdvisorWidget
               state={gameState}
               enabled={advisorEnabled}
               onToggle={handleToggleAdvisor}
+              voiceEnabled={voiceEnabled}
+              onToggleVoice={handleToggleVoice}
+              muted={muted}
               lang={lang}
               t={t}
               effectiveTier={effectiveTier}
@@ -1114,11 +1378,15 @@ export default function App() {
         onChangeLang={handleChangeLang}
         perfMode={perfMode}
         onChangePerfMode={handleChangePerfMode}
+        fpsCap={fpsCap}
+        onChangeFpsCap={handleChangeFpsCap}
         effectiveTier={effectiveTier}
         muted={muted}
         onToggleMute={handleToggleMute}
         advisorEnabled={advisorEnabled}
         onToggleAdvisor={handleToggleAdvisor}
+        voiceEnabled={voiceEnabled}
+        onToggleVoice={handleToggleVoice}
         uiMode={uiMode}
         onChangeUiMode={handleChangeUiMode}
         t={t}
