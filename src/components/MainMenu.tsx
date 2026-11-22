@@ -1,25 +1,34 @@
 import React, { useMemo, useState } from 'react';
 import {
   Bot,
-  Cpu,
   Crown,
+  Flame,
+  Flag,
   FolderOpen,
   Globe2,
   HelpCircle,
   Play,
   Search,
   Settings,
+  ShieldCheck,
   SlidersHorizontal,
   Sparkles,
   Swords,
   Trophy,
   UserCheck,
 } from 'lucide-react';
-import { DIFFICULTIES, SCENARIOS } from '../data/scenarios';
+import {
+  AI_AGGRESSIVENESS_CONFIG,
+  DIFFICULTIES,
+  SCENARIOS,
+  V4_DIFFICULTY_ORDER,
+} from '../data/scenarios';
 import { buildWorldMapData } from '../game/mapGen';
 import { type FpsCap, glassClass } from '../game/performance';
 import type {
+  AiAggressiveness,
   BlocksAccount,
+  CustomNationConfig,
   DifficultyId,
   EffectiveTier,
   GameMode,
@@ -27,28 +36,26 @@ import type {
   ScenarioId,
   UiMode,
 } from '../game/types';
-import { DIFFICULTY_TEXT, SCENARIO_TEXT, type Translations } from '../i18n/translations';
+import {
+  AI_AGGRESSIVENESS_TEXT,
+  DIFFICULTY_TEXT,
+  SCENARIO_TEXT,
+  UI_MODE_TEXT,
+  type Translations,
+} from '../i18n/translations';
 import { AnimatedMenuMapBg } from './AnimatedMenuMapBg';
 import { AvatarIcon, GlobalStrategyTitleLockup } from './BlocksLogo';
 import { FlagBadge } from './FlagBadge';
 
 const SCENARIO_ORDER: ScenarioId[] = ['2026', 'sandbox', '1939', '1918', '1619', '1410', '966'];
 
-const DIFFICULTY_ORDER: Array<{ id: DifficultyId; color: string }> = [
-  { id: 'world_conquest', color: '#FACC15' },
-  { id: 'auto_pilot', color: '#22D3EE' },
-  { id: 'extremely_easy_plus', color: '#A3E635' },
-  { id: 'extremely_easy', color: '#22C55E' },
-  { id: 'easy', color: '#38BDF8' },
-  { id: 'normal', color: '#F59E0B' },
-  { id: 'hard', color: '#F97316' },
-  { id: 'extreme', color: '#EF4444' },
-  { id: 'extreme_plus', color: '#DC2626' },
-];
+const UI_MODE_ORDER: UiMode[] = ['very_easy', 'easy', 'hard', 'extended', 'ultra_realistic'];
+const AI_AGGR_ORDER: AiAggressiveness[] = ['friendly', 'normal', 'aggressive', 'hyper'];
 
 const FEATURED_ORDER = [
   '616', '276', '804', '840', '156', '643', '250', '826', '380',
   '304', '352', '203', '703', '440', '428', '233', '112', '356', '392', '076',
+  '499', '196', '100', '010_arctowski',
 ];
 
 export function MainMenu({
@@ -59,10 +66,16 @@ export function MainMenu({
   onSelectScenario,
   selectedDifficulty,
   onSelectDifficulty,
+  aiAggressiveness,
+  onSelectAiAggressiveness,
   selectedCountryId,
   onSelectCountryId,
   uiMode,
   onSelectUiMode,
+  peacefulStartEnabled,
+  onTogglePeacefulStart,
+  customNation,
+  onOpenCustomNation,
   onStartCampaign,
   onOpenAccount,
   onOpenLoad,
@@ -74,6 +87,7 @@ export function MainMenu({
   lang,
   effectiveTier,
   fpsCap = 'unlimited',
+  bgPaused = false,
 }: {
   account: BlocksAccount;
   gameMode: GameMode;
@@ -82,10 +96,16 @@ export function MainMenu({
   onSelectScenario: (id: ScenarioId) => void;
   selectedDifficulty: DifficultyId;
   onSelectDifficulty: (id: DifficultyId) => void;
+  aiAggressiveness: AiAggressiveness;
+  onSelectAiAggressiveness: (aggr: AiAggressiveness) => void;
   selectedCountryId: string;
   onSelectCountryId: (id: string) => void;
   uiMode: UiMode;
   onSelectUiMode: (mode: UiMode) => void;
+  peacefulStartEnabled: boolean;
+  onTogglePeacefulStart: () => void;
+  customNation: CustomNationConfig | null;
+  onOpenCustomNation: () => void;
   onStartCampaign: () => void;
   onOpenAccount: () => void;
   onOpenLoad: () => void;
@@ -97,6 +117,7 @@ export function MainMenu({
   lang: Language;
   effectiveTier: EffectiveTier;
   fpsCap?: FpsCap;
+  bgPaused?: boolean;
 }) {
   const [search, setSearch] = useState('');
   const mapData = useMemo(() => buildWorldMapData(), []);
@@ -148,13 +169,13 @@ export function MainMenu({
 
   return (
     <div className="relative w-full h-full flex flex-col justify-between bg-[#03060E] text-slate-100 overflow-hidden">
-      <AnimatedMenuMapBg effectiveTier={effectiveTier} fpsCap={fpsCap} />
+      <AnimatedMenuMapBg effectiveTier={effectiveTier} fpsCap={fpsCap} paused={bgPaused} />
 
       {/* Top Sovereign Telemetry Strip */}
-      <header className="relative z-10 flex items-center justify-between gap-3 px-4 sm:px-8 pt-3.5">
+      <header className="relative z-10 flex items-center justify-between gap-3 px-4 sm:px-8 pt-3">
         <div className="flex items-center gap-2">
           <div
-            className={`px-3 py-1 rounded-md border border-amber-400/50 text-[11px] font-mono-num font-bold tracking-wider text-amber-300 ${cardGlass}`}
+            className={`px-3 py-1 rounded-md border border-amber-400/55 text-[11px] font-mono-num font-bold tracking-wider text-amber-300 ${cardGlass}`}
           >
             {t.publicBeta}
           </div>
@@ -163,7 +184,7 @@ export function MainMenu({
           >
             <span>{fpsCap === 'unlimited' ? '∞ Hz NATIVE' : `${fpsCap} FPS`}</span>
             <span className="text-slate-600">|</span>
-            <span>{playableCountries.length} NATIONS</span>
+            <span>{playableCountries.length} NATIONS & POLAR SECTORS</span>
           </div>
         </div>
 
@@ -181,29 +202,29 @@ export function MainMenu({
         </button>
       </header>
 
-      {/* Main Layout: Ground-Up V3.0 Command Bridge */}
-      <main className="relative z-10 flex-1 flex items-start lg:items-center justify-center px-4 sm:px-8 py-3 overflow-y-auto gs-scroll">
-        <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch my-auto">
+      {/* Main Layout: VERSION 4.0 Command Bridge */}
+      <main className="relative z-10 flex-1 flex items-start lg:items-center justify-center px-4 sm:px-8 py-2.5 overflow-y-auto gs-scroll">
+        <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch my-auto">
           {/* LEFT SOVEREIGN DECK */}
-          <div className={`lg:col-span-4 rounded-2xl border p-5 flex flex-col justify-between gap-4 ${cardGlass}`}>
-            <div className="space-y-4">
+          <div className={`lg:col-span-4 rounded-2xl border p-4 sm:p-5 flex flex-col justify-between gap-3.5 ${cardGlass}`}>
+            <div className="space-y-3">
               <GlobalStrategyTitleLockup />
 
               <div className="h-px bg-gradient-to-r from-amber-400/65 via-sky-400/35 to-transparent" />
 
-              <nav aria-label="Main Menu Navigation" className="flex flex-col gap-2">
+              <nav aria-label="Main Menu Navigation" className="flex flex-col gap-1.5">
                 <button
                   type="button"
                   data-testid="mode-player-btn"
                   onClick={() => onSelectGameMode('player')}
-                  className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg border text-sm font-bold transition-colors cursor-pointer whitespace-nowrap ${
+                  className={`w-full flex items-center justify-between px-3.5 py-2 rounded-lg border text-xs sm:text-sm font-bold transition-colors cursor-pointer whitespace-nowrap ${
                     !isSpectator
                       ? 'border-amber-400 bg-amber-500/20 text-amber-200 shadow-[0_0_18px_-4px_rgba(234,179,8,0.4)]'
                       : 'border-slate-800 bg-slate-950/75 text-slate-300 hover:border-amber-500/40 hover:text-white'
                   }`}
                 >
-                  <span className="flex items-center gap-2.5">
-                    <Swords size={16} className={!isSpectator ? 'text-amber-300' : 'text-slate-400'} />
+                  <span className="flex items-center gap-2">
+                    <Swords size={15} className={!isSpectator ? 'text-amber-300' : 'text-slate-400'} />
                     {t.playerModeLabel}
                   </span>
                   {!isSpectator && <span className="text-[10px] font-mono-num uppercase text-amber-300">ACTIVE</span>}
@@ -213,52 +234,82 @@ export function MainMenu({
                   type="button"
                   data-testid="mode-bot-btn"
                   onClick={() => onSelectGameMode('bot_spectator')}
-                  className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg border text-sm font-bold transition-colors cursor-pointer whitespace-nowrap ${
+                  className={`w-full flex items-center justify-between px-3.5 py-2 rounded-lg border text-xs sm:text-sm font-bold transition-colors cursor-pointer whitespace-nowrap ${
                     isSpectator
                       ? 'border-sky-400 bg-sky-500/20 text-sky-200 shadow-[0_0_18px_-4px_rgba(56,189,248,0.4)]'
                       : 'border-slate-800 bg-slate-950/75 text-slate-300 hover:border-sky-500/40 hover:text-white'
                   }`}
                 >
-                  <span className="flex items-center gap-2.5">
-                    <Bot size={16} className={isSpectator ? 'text-sky-300' : 'text-slate-400'} />
+                  <span className="flex items-center gap-2">
+                    <Bot size={15} className={isSpectator ? 'text-sky-300' : 'text-slate-400'} />
                     {t.botModeLabel}
                   </span>
                   {isSpectator && <span className="text-[10px] font-mono-num uppercase text-sky-300">ACTIVE</span>}
                 </button>
 
+                {/* Prominent LOAD GAME button */}
                 <button
                   type="button"
+                  data-testid="menu-load-game-btn"
                   onClick={onOpenLoad}
-                  className="w-full flex items-center gap-2.5 px-4 py-2.5 rounded-lg border border-slate-800 bg-slate-950/75 hover:border-amber-500/40 hover:bg-slate-900/90 text-sm font-semibold text-slate-200 transition-colors cursor-pointer whitespace-nowrap"
+                  className="w-full flex items-center justify-between gap-2 px-3.5 py-2 rounded-lg border border-sky-400/55 bg-sky-500/15 hover:bg-sky-500/25 text-xs sm:text-sm font-extrabold text-sky-100 transition-colors cursor-pointer whitespace-nowrap"
                 >
-                  <FolderOpen size={16} className="text-sky-400" />
-                  <span>{t.loadGame}</span>
+                  <span className="flex items-center gap-2">
+                    <FolderOpen size={15} className="text-sky-300" />
+                    <span className="uppercase tracking-wide">{t.loadGame}</span>
+                  </span>
+                  <span className="text-[10px] font-mono-num text-sky-300">SLOTS</span>
+                </button>
+
+                {/* Custom Nation Creator button */}
+                <button
+                  type="button"
+                  data-testid="custom-nation-btn"
+                  onClick={onOpenCustomNation}
+                  className={`w-full flex items-center justify-between gap-2 px-3.5 py-2 rounded-lg border text-xs sm:text-sm font-bold transition-colors cursor-pointer whitespace-nowrap ${
+                    customNation
+                      ? 'border-emerald-400/70 bg-emerald-500/15 text-emerald-100'
+                      : 'border-slate-800 bg-slate-950/75 hover:border-amber-400/50 text-slate-200'
+                  }`}
+                >
+                  <span className="flex items-center gap-2 truncate">
+                    {customNation ? (
+                      <FlagBadge flag={customNation.flag} width={18} height={12} />
+                    ) : (
+                      <Flag size={15} className="text-amber-400 shrink-0" />
+                    )}
+                    <span className="truncate">{customNation ? customNation.name : t.customNationBtn}</span>
+                  </span>
+                  <span className="text-[10px] font-mono-num text-amber-300 shrink-0">
+                    {customNation ? 'READY' : 'CREATE'}
+                  </span>
                 </button>
 
                 <button
                   type="button"
                   data-testid="scenario-editor-btn"
                   onClick={onOpenScenarioEditor}
-                  className="w-full flex items-center gap-2.5 px-4 py-2.5 rounded-lg border border-slate-800 bg-slate-950/75 hover:border-purple-400/50 hover:bg-slate-900/90 text-sm font-semibold text-slate-200 transition-colors cursor-pointer whitespace-nowrap"
+                  className="w-full flex items-center gap-2 px-3.5 py-2 rounded-lg border border-slate-800 bg-slate-950/75 hover:border-purple-400/50 hover:bg-slate-900/90 text-xs sm:text-sm font-semibold text-slate-200 transition-colors cursor-pointer whitespace-nowrap"
                 >
-                  <SlidersHorizontal size={16} className="text-purple-400" />
+                  <SlidersHorizontal size={15} className="text-purple-400" />
                   <span>{t.scenarioEditorBtn}</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={onOpenLeaderboard}
-                  className="w-full flex items-center gap-2.5 px-4 py-2.5 rounded-lg border border-slate-800 bg-slate-950/75 hover:border-amber-400/50 hover:bg-slate-900/90 text-sm font-semibold text-slate-200 transition-colors cursor-pointer whitespace-nowrap"
+                  className="w-full flex items-center gap-2 px-3.5 py-2 rounded-lg border border-slate-800 bg-slate-950/75 hover:border-amber-400/50 hover:bg-slate-900/90 text-xs sm:text-sm font-semibold text-slate-200 transition-colors cursor-pointer whitespace-nowrap"
                 >
-                  <Trophy size={16} className="text-amber-400" />
+                  <Trophy size={15} className="text-amber-400" />
                   <span>{t.hallOfFameTab}</span>
                 </button>
 
                 <div className="grid grid-cols-2 gap-2 pt-0.5">
                   <button
                     type="button"
+                    data-testid="menu-settings-btn"
                     onClick={onOpenSettings}
-                    className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border border-slate-800 bg-slate-950/75 hover:border-amber-400/50 text-xs font-semibold text-slate-200 hover:text-white cursor-pointer whitespace-nowrap"
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-slate-800 bg-slate-950/75 hover:border-amber-400/50 text-xs font-semibold text-slate-200 hover:text-white cursor-pointer whitespace-nowrap"
                   >
                     <Settings size={14} className="text-sky-300" />
                     <span>{t.settings}</span>
@@ -266,22 +317,42 @@ export function MainMenu({
                   <button
                     type="button"
                     onClick={onOpenTutorial}
-                    className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border border-slate-800 bg-slate-950/75 hover:border-emerald-400/50 text-xs font-semibold text-slate-200 hover:text-white cursor-pointer whitespace-nowrap"
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-slate-800 bg-slate-950/75 hover:border-emerald-400/50 text-xs font-semibold text-slate-200 hover:text-white cursor-pointer whitespace-nowrap"
                   >
                     <HelpCircle size={14} className="text-emerald-400" />
                     <span>{t.tutorial}</span>
                   </button>
                 </div>
+
+                {/* Quick Peaceful Start Indicator & Toggle */}
+                {!isSpectator && (
+                  <button
+                    type="button"
+                    data-testid="menu-peaceful-start-toggle"
+                    onClick={onTogglePeacefulStart}
+                    className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg border text-[11px] font-bold cursor-pointer ${
+                      peacefulStartEnabled
+                        ? 'border-emerald-500/45 bg-emerald-500/12 text-emerald-200'
+                        : 'border-rose-500/40 bg-rose-500/10 text-rose-200'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5 truncate">
+                      <ShieldCheck size={13} className={peacefulStartEnabled ? 'text-emerald-400' : 'text-rose-400'} />
+                      <span className="truncate">{t.peacefulStartLabel}</span>
+                    </span>
+                    <span className="font-mono-num shrink-0">{peacefulStartEnabled ? 'ON' : 'OFF'}</span>
+                  </button>
+                )}
               </nav>
             </div>
 
             {/* Primary Launch CTA */}
-            <div className="space-y-1.5 pt-3 border-t border-slate-800/80">
+            <div className="space-y-1.5 pt-2.5 border-t border-slate-800/80">
               <button
                 type="button"
                 data-start="true"
                 onClick={onStartCampaign}
-                className={`w-full flex items-center justify-center gap-2.5 py-3.5 px-6 rounded-xl font-display text-base font-extrabold tracking-wide shadow-lg cursor-pointer transition-transform active:scale-[0.99] whitespace-nowrap ${
+                className={`w-full flex items-center justify-center gap-2.5 py-3 px-5 rounded-xl font-display text-base font-extrabold tracking-wide shadow-lg cursor-pointer transition-transform active:scale-[0.99] whitespace-nowrap ${
                   isSpectator
                     ? 'bg-sky-400 hover:bg-sky-300 text-slate-950'
                     : 'bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:brightness-110 text-slate-950'
@@ -296,11 +367,11 @@ export function MainMenu({
             </div>
           </div>
 
-          {/* RIGHT STAGING MATRIX: 7 Scenarios, 9 Difficulties (incl. World Conquest), 3 UI Modes & Atlas */}
-          <div className={`lg:col-span-8 rounded-2xl border p-5 flex flex-col gap-3.5 lg:max-h-[670px] ${cardGlass}`}>
+          {/* RIGHT STAGING MATRIX: 7 Scenarios, 9 V4.0 Difficulties, AI Aggressiveness (BOTH Modes), 5 UI Modes & World Atlas */}
+          <div className={`lg:col-span-8 rounded-2xl border p-4 sm:p-5 flex flex-col gap-3 lg:max-h-[710px] ${cardGlass}`}>
             {/* 7 Scenarios Grid */}
             <div>
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between mb-1.5">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-amber-300/95 flex items-center gap-1.5">
                   <Globe2 size={13} className="text-amber-400" />
                   {t.selectScenario}
@@ -309,7 +380,7 @@ export function MainMenu({
                   {SCENARIO_ORDER.length} ERAS
                 </span>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-1.5">
                 {SCENARIO_ORDER.map((sId) => {
                   const sText = SCENARIO_TEXT[lang][sId];
                   const active = selectedScenario === sId;
@@ -320,7 +391,7 @@ export function MainMenu({
                       type="button"
                       data-testid={`scenario-${sId}`}
                       onClick={() => onSelectScenario(sId)}
-                      className={`text-left px-2.5 py-2 rounded-lg border transition-colors cursor-pointer ${
+                      className={`text-left px-2 py-1.5 rounded-lg border transition-colors cursor-pointer ${
                         active
                           ? isSandbox
                             ? 'border-cyan-400 bg-cyan-500/20'
@@ -328,17 +399,48 @@ export function MainMenu({
                           : 'border-slate-800/90 bg-slate-950/65 hover:border-amber-500/40'
                       }`}
                     >
-                      <div className="text-[11.5px] font-bold text-white leading-snug truncate">
+                      <div className="text-[11px] font-bold text-white leading-snug truncate">
                         {sText.title}
                       </div>
-                      <div className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">{sText.subtitle}</div>
+                      <div className="text-[9.5px] text-slate-400 line-clamp-1">{sText.subtitle}</div>
                     </button>
                   );
                 })}
               </div>
             </div>
 
-            {/* 9-Tier Difficulty Selector (incl. World Conquest) + 3-Tier Visual Complexity Mode */}
+            {/* AI Aggressiveness Control — ACTIVE IN BOTH PLAYER & BOT SPECTATOR MODES */}
+            <div className="rounded-xl border border-slate-800/90 bg-slate-950/55 px-3 py-2 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[10.5px] font-bold uppercase tracking-wider text-rose-300 flex items-center gap-1.5">
+                <Flame size={12} className="text-rose-400" />
+                {t.aiAggressivenessLabel}:
+              </span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {AI_AGGR_ORDER.map((aggr) => {
+                  const active = aiAggressiveness === aggr;
+                  const spec = AI_AGGRESSIVENESS_CONFIG[aggr];
+                  const label = AI_AGGRESSIVENESS_TEXT[lang][aggr];
+                  return (
+                    <button
+                      key={aggr}
+                      type="button"
+                      data-testid={`ai-aggr-${aggr}`}
+                      onClick={() => onSelectAiAggressiveness(aggr)}
+                      style={active ? { borderColor: spec.color } : undefined}
+                      className={`px-2.5 py-1 rounded-md border text-[10.5px] font-bold cursor-pointer transition-colors ${
+                        active
+                          ? 'bg-slate-800 text-white shadow-sm'
+                          : 'border-slate-800 bg-slate-950/75 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {label.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 9-Tier V4.0 Difficulty Selector + 5 UI Complexity Modes */}
             {!isSpectator ? (
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">
@@ -346,84 +448,68 @@ export function MainMenu({
                     <Sparkles size={12} className="text-amber-400" />
                     {t.selectDifficulty}
                   </span>
-                  <span className="text-[10.5px] font-semibold normal-case text-amber-200">
+                  <span className="text-[10px] font-semibold normal-case text-amber-200 truncate max-w-[360px]">
                     {activeDiffText.desc}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                  {DIFFICULTY_ORDER.map((d) => {
-                    const active = selectedDifficulty === d.id;
-                    const dSpec = DIFFICULTIES[d.id];
-                    const dText = DIFFICULTY_TEXT[lang][d.id];
-                    const isWorldConquest = d.id === 'world_conquest';
-                    const isAuto = d.id === 'auto_pilot';
-                    const isExtremePlus = d.id === 'extreme_plus';
+                <div className="grid grid-cols-3 gap-1.5">
+                  {V4_DIFFICULTY_ORDER.map((dId) => {
+                    const active = selectedDifficulty === dId;
+                    const dSpec = DIFFICULTIES[dId];
+                    const dText = DIFFICULTY_TEXT[lang][dId];
+                    const isTopImpossible = dId === 'extreme_ultra_impossible';
 
                     return (
                       <button
-                        key={d.id}
+                        key={dId}
                         type="button"
-                        data-testid={`difficulty-${d.id}`}
-                        onClick={() => onSelectDifficulty(d.id)}
+                        data-testid={`difficulty-${dId}`}
+                        onClick={() => onSelectDifficulty(dId)}
                         style={active ? { borderColor: dSpec.color } : undefined}
-                        className={`px-2.5 py-2 rounded-lg border text-left transition-colors cursor-pointer ${
+                        className={`px-2.5 py-1.5 rounded-lg border text-left transition-colors cursor-pointer ${
                           active
-                            ? isWorldConquest
-                              ? 'bg-gradient-to-r from-amber-950/90 to-yellow-900/60 text-yellow-100 shadow-[0_0_16px_rgba(250,204,21,0.34)]'
-                              : isAuto
-                              ? 'bg-cyan-950/85 text-cyan-100 shadow-[0_0_14px_rgba(34,211,238,0.28)]'
-                              : isExtremePlus
-                              ? 'bg-rose-950/90 text-rose-100 shadow-[0_0_14px_rgba(220,38,38,0.35)]'
-                              : 'bg-slate-800/95 text-white'
-                            : isWorldConquest
-                            ? 'border-amber-500/45 bg-amber-950/20 text-amber-100 hover:border-amber-400'
+                            ? isTopImpossible
+                              ? 'bg-gradient-to-r from-rose-950 to-red-900/80 text-rose-100 shadow-[0_0_16px_rgba(225,29,72,0.45)]'
+                              : 'bg-slate-800/95 text-white shadow-sm'
                             : 'border-slate-800 bg-slate-950/65 text-slate-300 hover:border-slate-600 hover:text-white'
                         }`}
                       >
                         <div className="flex items-center gap-1.5 min-w-0">
-                          {isWorldConquest ? (
-                            <Crown size={12} className="text-yellow-300 shrink-0" />
-                          ) : isAuto ? (
-                            <Cpu size={12} className="text-cyan-300 shrink-0" />
+                          {isTopImpossible ? (
+                            <Crown size={12} className="text-rose-400 shrink-0" />
                           ) : (
                             <span
                               className="inline-block w-2 h-2 rounded-sm shrink-0"
-                              style={{ backgroundColor: d.color }}
+                              style={{ backgroundColor: dSpec.color }}
                             />
                           )}
-                          <span className="text-[10.5px] font-bold truncate">{dText.label}</span>
+                          <span className="text-[10.5px] font-extrabold truncate">{dText.label}</span>
                         </div>
                       </button>
                     );
                   })}
                 </div>
 
-                {/* 3-Tier Visual Interface Mode */}
+                {/* 5-Tier Visual Interface Mode */}
                 <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-slate-800/70">
                   <span className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400">
                     {t.uiModeLabel}:
                   </span>
-                  <div className="flex items-center gap-1.5">
-                    {(
-                      [
-                        { id: 'very_easy', label: t.uiVeryEasy },
-                        { id: 'easy', label: t.uiEasy },
-                        { id: 'hard', label: t.uiHard },
-                      ] as const
-                    ).map((m) => (
+                  <div className="flex flex-wrap items-center gap-1">
+                    {UI_MODE_ORDER.map((mId) => (
                       <button
-                        key={m.id}
+                        key={mId}
                         type="button"
-                        data-testid={`menu-uimode-${m.id}`}
-                        onClick={() => onSelectUiMode(m.id)}
-                        className={`px-2.5 py-1 rounded border text-[10.5px] font-bold cursor-pointer transition-colors ${
-                          uiMode === m.id
+                        data-testid={`menu-uimode-${mId}`}
+                        onClick={() => onSelectUiMode(mId)}
+                        className={`px-2 py-1 rounded border text-[10px] font-bold cursor-pointer transition-colors ${
+                          uiMode === mId
                             ? 'border-amber-400 bg-amber-500/20 text-amber-200'
                             : 'border-slate-800 bg-slate-950/65 text-slate-400 hover:text-white'
                         }`}
                       >
-                        {m.label}
+                        {UI_MODE_TEXT[lang][mId]}
                       </button>
                     ))}
                   </div>
@@ -437,75 +523,98 @@ export function MainMenu({
             )}
 
             {/* Complete World Nation Selector */}
-            <div className="flex-1 flex flex-col min-h-[200px]">
-              <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                    {t.selectCountry}
-                  </span>
-                  {activeMeta && (
-                    <div className="flex items-center gap-2 pl-3 border-l border-slate-800 min-w-0">
-                      <FlagBadge flag={activeMeta.flag} width={24} height={16} />
-                      <span className="text-xs font-bold text-amber-200 truncate">
-                        {scenario.countryNameOverrides?.[activeMeta.id] ?? activeMeta.name[lang]}
-                      </span>
-                      <span className="text-[11px] font-mono-num text-slate-400 shrink-0">
-                        {activeMeta.areaKm2.toLocaleString(lang === 'en' ? 'en-US' : 'pl-PL')} km²
-                      </span>
-                    </div>
-                  )}
+            {!customNation ? (
+              <div className="flex-1 flex flex-col min-h-[165px]">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                      {t.selectCountry}
+                    </span>
+                    {activeMeta && (
+                      <div className="flex items-center gap-2 pl-3 border-l border-slate-800 min-w-0">
+                        <FlagBadge flag={activeMeta.flag} width={24} height={16} />
+                        <span className="text-xs font-bold text-amber-200 truncate">
+                          {scenario.countryNameOverrides?.[activeMeta.id] ?? activeMeta.name[lang]}
+                        </span>
+                        <span className="text-[11px] font-mono-num text-slate-400 shrink-0">
+                          {activeMeta.areaKm2.toLocaleString(lang === 'en' ? 'en-US' : 'pl-PL')} km²
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="relative w-full sm:w-52">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder={t.searchCountry}
+                      aria-label={t.searchCountry}
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950/90 pl-8 pr-3 py-1.5 text-xs text-white focus:border-amber-400 focus:outline-none"
+                    />
+                  </div>
                 </div>
 
-                <div className="relative w-full sm:w-56">
-                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder={t.searchCountry}
-                    aria-label={t.searchCountry}
-                    className="w-full rounded-lg border border-slate-700 bg-slate-950/90 pl-8 pr-3 py-1.5 text-xs text-white focus:border-amber-400 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-y-auto gs-scroll grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-1.5 pr-1">
-                {filteredCountries.map((country) => {
-                  const isSelected = activeCountryId === country.id;
-                  const displayName = scenario.countryNameOverrides?.[country.id] ?? country.name[lang];
-                  const estArmy = Math.round(
-                    (scenario.strengthOverrides?.[country.id] ??
-                      (country.startingArmy2026 ?? 15000) * scenario.armyScale) / 1000,
-                  );
-                  return (
-                    <button
-                      key={country.id}
-                      type="button"
-                      data-testid={`country-card-${country.id}`}
-                      onClick={() => onSelectCountryId(country.id)}
-                      className={`flex items-center justify-between gap-2 px-3 py-2 rounded-lg border text-left transition-colors cursor-pointer ${
-                        isSelected
-                          ? 'border-amber-400 bg-amber-500/20'
-                          : 'border-slate-800/85 bg-slate-950/60 hover:border-amber-500/40'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <FlagBadge flag={country.flag} width={22} height={15} />
-                        <div className="min-w-0">
-                          <div className="text-xs font-bold text-white truncate">{displayName}</div>
-                          <div className="text-[10px] text-slate-400 font-mono-num">
-                            {country.areaKm2.toLocaleString(lang === 'en' ? 'en-US' : 'pl-PL')} km²
+                <div className="flex-1 overflow-y-auto gs-scroll grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-1.5 pr-1">
+                  {filteredCountries.map((country) => {
+                    const isSelected = activeCountryId === country.id;
+                    const displayName = scenario.countryNameOverrides?.[country.id] ?? country.name[lang];
+                    const estArmy = Math.round(
+                      (scenario.strengthOverrides?.[country.id] ??
+                        (country.startingArmy2026 ?? 15000) * scenario.armyScale) / 1000,
+                    );
+                    return (
+                      <button
+                        key={country.id}
+                        type="button"
+                        data-testid={`country-card-${country.id}`}
+                        onClick={() => onSelectCountryId(country.id)}
+                        className={`flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg border text-left transition-colors cursor-pointer ${
+                          isSelected
+                            ? 'border-amber-400 bg-amber-500/20'
+                            : 'border-slate-800/85 bg-slate-950/60 hover:border-amber-500/40'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FlagBadge flag={country.flag} width={22} height={15} />
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold text-white truncate">{displayName}</div>
+                            <div className="text-[10px] text-slate-400 font-mono-num">
+                              {country.areaKm2.toLocaleString(lang === 'en' ? 'en-US' : 'pl-PL')} km²
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <span className="text-[11px] font-mono-num font-bold text-amber-300 shrink-0">
-                        {estArmy}k
-                      </span>
-                    </button>
-                  );
-                })}
+                        <span className="text-[11px] font-mono-num font-bold text-amber-300 shrink-0">
+                          {estArmy}k
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="flex-1 rounded-xl border border-emerald-500/45 bg-emerald-950/20 p-4 flex flex-col justify-between gap-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <FlagBadge flag={customNation.flag} label={customNation.name} width={54} height={36} />
+                    <div>
+                      <div className="text-sm font-extrabold text-white">{customNation.name}</div>
+                      <div className="text-xs text-emerald-300">
+                        Capital: {customNation.capitalName} · {customNation.provinceIds.length} starting provinces
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onOpenCustomNation}
+                    className="px-3 py-1.5 rounded-lg border border-emerald-400/50 bg-emerald-500/20 text-xs font-bold text-emerald-100 cursor-pointer"
+                  >
+                    Edit Nation
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </main>

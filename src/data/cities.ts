@@ -1,436 +1,268 @@
-import type { Language } from '../game/types';
-
-export interface MajorCity {
+export interface CityReconSpot {
   id: string;
-  name: string;
-  countryCode: string;
-  provinceId: string;
+  provinceIdMatch?: string;
+  countryIso: string;
+  city: string;
+  countryName: string;
   lat: number;
-  lng: number;
+  lon: number;
   populationLabel: string;
-  strategicRole: Record<Language, string>;
+  landmarks: string[];
+  tier: 'major' | 'capital' | 'tactical';
 }
 
-export const MAJOR_CITIES: MajorCity[] = [
+export const CITY_RECON_SPOTS: CityReconSpot[] = [
   {
     id: 'warsaw',
-    name: 'Warsaw',
-    countryCode: '616',
-    provinceId: '616_p0',
+    provinceIdMatch: 'PL_MZ',
+    countryIso: '616',
+    city: 'Warsaw',
+    countryName: 'Poland',
     lat: 52.2297,
-    lng: 21.0122,
-    populationLabel: '1.86M',
-    strategicRole: {
-      en: 'Capital Command & Central Vistula Hub',
-      pl: 'Stolica Polski i Centralny Węzeł Wisły',
-      szl: 'Stolica Polski i Głōwny Wynzeł',
-      csb: 'Stolëca Pòlsczi i Przédny Wãzeł',
-    },
+    lon: 21.0122,
+    populationLabel: '1.86M (Metro 3.1M)',
+    landmarks: ['Royal Castle', 'Palace of Culture & Science', 'Vistula Boulevards'],
+    tier: 'capital',
   },
   {
     id: 'jastrzebie_zdroj',
-    name: 'Jastrzębie-Zdrój',
-    countryCode: '616',
-    provinceId: '616_p1',
-    lat: 49.9488,
-    lng: 18.5996,
-    populationLabel: '83K',
-    strategicRole: {
-      en: 'Upper Silesian Coking Coal & Moravian Gate Frontier',
-      pl: 'Górnośląskie Zagłębie Węglowe i Brama Morawska',
-      szl: 'Gōrnoślōnske Zagłymbje i Morawsko Brama',
-      csb: 'Górnosląsczé Zôgłãbié i Mòrawskô Brama',
-    },
-  },
-  {
-    id: 'krakow',
-    name: 'Kraków',
-    countryCode: '616',
-    provinceId: '616_p2',
-    lat: 50.0647,
-    lng: 19.945,
-    populationLabel: '804K',
-    strategicRole: {
-      en: 'Historic Royal Capital & Southern Logistics',
-      pl: 'Historyczna Stolica i Logistyka Południowa',
-      szl: 'Historyczno Stolica i Połedniowo Logistyka',
-      csb: 'Historëcznô Stolëca i Pôłniowô Logistika',
-    },
+    provinceIdMatch: 'PL_SL',
+    countryIso: '616',
+    city: 'Jastrzębie-Zdrój',
+    countryName: 'Poland',
+    lat: 49.9489,
+    lon: 18.5997,
+    populationLabel: '84,000',
+    landmarks: ['Spa Park (Park Zdrojowy)', 'Silesian Coal & Steel Hub', 'Southern Rail Gate'],
+    tier: 'tactical',
   },
   {
     id: 'gdansk',
-    name: 'Gdańsk',
-    countryCode: '616',
-    provinceId: '616_p5',
+    provinceIdMatch: 'PL_PM',
+    countryIso: '616',
+    city: 'Gdańsk',
+    countryName: 'Poland',
     lat: 54.352,
-    lng: 18.6466,
-    populationLabel: '487K',
-    strategicRole: {
-      en: 'Primary Baltic Naval Port & Shipyard Corridor',
-      pl: 'Główny Port Bałtycki i Korytarz Morski',
-      szl: 'Głōwny Port Bałtycki i Stocznia',
-      csb: 'Przédny Pòrt Bôłtu i Mòrskô Kòrëtarz',
-    },
+    lon: 18.6466,
+    populationLabel: '486,000',
+    landmarks: ['Baltic Deepwater Terminal', 'Long Market', 'Westerplatte'],
+    tier: 'major',
+  },
+  {
+    id: 'krakow',
+    provinceIdMatch: 'PL_MA',
+    countryIso: '616',
+    city: 'Kraków',
+    countryName: 'Poland',
+    lat: 50.0647,
+    lon: 19.945,
+    populationLabel: '804,000',
+    landmarks: ['Wawel Royal Castle', 'Main Market Square', 'Vistula Bend'],
+    tier: 'major',
   },
   {
     id: 'wroclaw',
-    name: 'Wrocław',
-    countryCode: '616',
-    provinceId: '616_p4',
+    provinceIdMatch: 'PL_DS',
+    countryIso: '616',
+    city: 'Wrocław',
+    countryName: 'Poland',
     lat: 51.1079,
-    lng: 17.0385,
-    populationLabel: '674K',
-    strategicRole: {
-      en: 'Oder River Industrial & Aerospace Fortress',
-      pl: 'Odrzański Okręg Przemysłowy i Twierdza',
-      szl: 'Ôdrzański Przemysł i Twierdza',
-      csb: 'Òdrzansczi Przemësł i Cwiardza',
-    },
+    lon: 17.0385,
+    populationLabel: '674,000',
+    landmarks: ['Centennial Hall', 'Ostrów Tumski', 'Odra Bridges'],
+    tier: 'major',
   },
   {
-    id: 'prague',
-    name: 'Prague',
-    countryCode: '203',
-    provinceId: '203_p0',
-    lat: 50.0755,
-    lng: 14.4378,
-    populationLabel: '1.38M',
-    strategicRole: {
-      en: 'Bohemian Plateau Command & Heavy Armor Arsenal',
-      pl: 'Dowództwo Czeskie i Zakłady Pancerne',
-      szl: 'Czeske Dowōdztwo i Pancyry',
-      csb: 'Czesczé Dowództwò i Pancerz',
-    },
-  },
-  {
-    id: 'bratislava',
-    name: 'Bratislava',
-    countryCode: '703',
-    provinceId: '703_p0',
-    lat: 48.1486,
-    lng: 17.1077,
-    populationLabel: '476K',
-    strategicRole: {
-      en: 'Danube River Crossroads & Carpathian Approach',
-      pl: 'Węzeł Naddunajski i Przedpole Karpat',
-      szl: 'Dunajski Wynzeł i Karpaty',
-      csb: 'Dunajsczi Wãzeł i Karpatë',
-    },
-  },
-  {
-    id: 'berlin',
-    name: 'Berlin',
-    countryCode: '276',
-    provinceId: '276_p0',
-    lat: 52.52,
-    lng: 13.405,
-    populationLabel: '3.78M',
-    strategicRole: {
-      en: 'Central European Metropolis & Rail Nexus',
-      pl: 'Metropolia Europy Środkowej i Węzeł Kolejowy',
-      szl: 'Metropolijo Ojropy i Wynzeł Kolejowy',
-      csb: 'Metropòlia Eùropë i Wãzeł Kolejowi',
-    },
-  },
-  {
-    id: 'paris',
-    name: 'Paris',
-    countryCode: '250',
-    provinceId: '250_p0',
-    lat: 48.8566,
-    lng: 2.3522,
-    populationLabel: '2.10M',
-    strategicRole: {
-      en: 'Western European Diplomatic & Aerospace Capital',
-      pl: 'Stolica Lotnicza i Dyplomatyczna Zachodu',
-      szl: 'Dyplomatyczno i Lotniczo Stolica',
-      csb: 'Diplòmaticznô i Lëtniczô Stolëca',
-    },
-  },
-  {
-    id: 'london',
-    name: 'London',
-    countryCode: '826',
-    provinceId: '826_p0',
-    lat: 51.5072,
-    lng: -0.1276,
-    populationLabel: '8.98M',
-    strategicRole: {
-      en: 'Global Maritime Finance & North Sea Command',
-      pl: 'Globalne Centrum Morskie i Finansowe',
-      szl: 'Morske i Finansowe Cyntrum',
-      csb: 'Mòrsczé i Finansowé Centrum',
-    },
-  },
-  {
-    id: 'rome',
-    name: 'Rome',
-    countryCode: '380',
-    provinceId: '380_p0',
-    lat: 41.9028,
-    lng: 12.4964,
-    populationLabel: '2.76M',
-    strategicRole: {
-      en: 'Mediterranean Naval Bastion & Heritage Seat',
-      pl: 'Śródziemnomorski Bastion Morski',
-      szl: 'Śrōdziymnomorski Bastiōn',
-      csb: 'Strzódzemnomòrsczi Bastion',
-    },
-  },
-  {
-    id: 'madrid',
-    name: 'Madrid',
-    countryCode: '724',
-    provinceId: '724_p0',
-    lat: 40.4168,
-    lng: -3.7038,
-    populationLabel: '3.33M',
-    strategicRole: {
-      en: 'Iberian Highland Hub & Atlantic Transit',
-      pl: 'Iberyjski Węzeł Strategiczny',
-      szl: 'Iberyjski Wynzeł',
-      csb: 'Iberyjsczi Wãzeł',
-    },
-  },
-  {
-    id: 'vienna',
-    name: 'Vienna',
-    countryCode: '040',
-    provinceId: '040_p0',
-    lat: 48.2082,
-    lng: 16.3738,
-    populationLabel: '2.01M',
-    strategicRole: {
-      en: 'Alpine-Danube Summit & Diplomatic Gate',
-      pl: 'Alpejsko-Dunajska Brama Dyplomatyczna',
-      szl: 'Dunajsko Brama Dyplomatyczno',
-      csb: 'Alpejskò-Dunajowô Brama',
-    },
-  },
-  {
-    id: 'kyiv',
-    name: 'Kyiv',
-    countryCode: '804',
-    provinceId: '804_p0',
-    lat: 50.4501,
-    lng: 30.5234,
-    populationLabel: '2.95M',
-    strategicRole: {
-      en: 'Dnieper Defense Citadel & Black Sea Corridor',
-      pl: 'Cytadela nad Dnieprem i Korytarz Czarnomorski',
-      szl: 'Cytadela nad Dnieprym',
-      csb: 'Cwiardza nad Dnieprã',
-    },
-  },
-  {
-    id: 'stockholm',
-    name: 'Stockholm',
-    countryCode: '752',
-    provinceId: '752_p0',
-    lat: 59.3293,
-    lng: 18.0686,
-    populationLabel: '984K',
-    strategicRole: {
-      en: 'Baltic Archipelago Fleet & Arctic Radar',
-      pl: 'Bałtycka Flota Archipelagu i Radar Arktyczny',
-      szl: 'Bałtycko Flota i Radar',
-      csb: 'Bôłtëckô Flota i Radar',
-    },
-  },
-  {
-    id: 'istanbul',
-    name: 'Istanbul',
-    countryCode: '792',
-    provinceId: '792_p0',
-    lat: 41.0082,
-    lng: 28.9784,
-    populationLabel: '15.9M',
-    strategicRole: {
-      en: 'Bosphorus Strait Choke Point & Transcontinental Bridge',
-      pl: 'Cieśnina Bosfor i Most Międzykontynentalny',
-      szl: 'Ciyśnina Bosfor',
-      csb: 'Czesnina Bòsfòr',
-    },
-  },
-  {
-    id: 'cairo',
-    name: 'Cairo',
-    countryCode: '818',
-    provinceId: '818_p0',
-    lat: 30.0444,
-    lng: 31.2357,
-    populationLabel: '10.2M',
-    strategicRole: {
-      en: 'Suez Canal Lifeblood & Nile Delta Hub',
-      pl: 'Kanał Sueski i Delta Nilu',
-      szl: 'Kanał Sueski i Nil',
-      csb: 'Kanał Suesczi i Nil',
-    },
-  },
-  {
-    id: 'new_delhi',
-    name: 'New Delhi',
-    countryCode: '356',
-    provinceId: '356_p0',
-    lat: 28.6139,
-    lng: 77.209,
-    populationLabel: '32.9M',
-    strategicRole: {
-      en: 'South Asian Command & Space Launch Directorate',
-      pl: 'Dowództwo Azji Południowej i Program Kosmiczny',
-      szl: 'Dowōdztwo Azyje i Kosmos',
-      csb: 'Dowództwò Azji i Kòsmòs',
-    },
-  },
-  {
-    id: 'beijing',
-    name: 'Beijing',
-    countryCode: '156',
-    provinceId: '156_p0',
-    lat: 39.9042,
-    lng: 116.4074,
-    populationLabel: '21.9M',
-    strategicRole: {
-      en: 'East Asian Superpower Command & Rare Earths Network',
-      pl: 'Centrum Przemysłowe i Ziem Rzadkich',
-      szl: 'Cyntrum Przemysłu i Zym Rzadkich',
-      csb: 'Centrum Przemësłu i Rzadczich Zemiów',
-    },
-  },
-  {
-    id: 'tokyo',
-    name: 'Tokyo',
-    countryCode: '392',
-    provinceId: '392_p0',
-    lat: 35.6762,
-    lng: 139.6503,
-    populationLabel: '14.1M',
-    strategicRole: {
-      en: 'Pacific Robotics & Carrier Task Force HQ',
-      pl: 'Pacyficzne Centrum Robotyki i Floty',
-      szl: 'Pacyficzne Cyntrum Robotyki',
-      csb: 'Pacyficzné Centrum Robòticzi',
-    },
-  },
-  {
-    id: 'seoul',
-    name: 'Seoul',
-    countryCode: '410',
-    provinceId: '410_p0',
-    lat: 37.5665,
-    lng: 126.978,
-    populationLabel: '9.6M',
-    strategicRole: {
-      en: 'High-Tech Semiconductor & Missile Shield Nexus',
-      pl: 'Hub Półprzewodników i Tarczy Antyrakietowej',
-      szl: 'Cyntrum Technologije i Rakiet',
-      csb: 'Centrum Technòlogii i Tarczë',
-    },
-  },
-  {
-    id: 'washington',
-    name: 'Washington, D.C.',
-    countryCode: '840',
-    provinceId: '840_p0',
-    lat: 38.9072,
-    lng: -77.0369,
-    populationLabel: '689K',
-    strategicRole: {
-      en: 'North American Strategic Command & Orbital Defense',
-      pl: 'Dowództwo Strategiczne i Tarcza Orbitalna',
-      szl: 'Strategiczne Dowōdztwo i Ôrbita',
-      csb: 'Strategiczné Dowództwò i Òrbita',
-    },
-  },
-  {
-    id: 'brasilia',
-    name: 'Brasília',
-    countryCode: '076',
-    provinceId: '076_p0',
-    lat: -15.7975,
-    lng: -47.8919,
-    populationLabel: '2.82M',
-    strategicRole: {
-      en: 'South American Interior Command & Aerospace Hub',
-      pl: 'Centrum Ameryki Południowej i Zasoby',
-      szl: 'Cyntrum Ameryki Połedniowyj',
-      csb: 'Centrum Americzi Pôłniowë',
-    },
+    id: 'poznan',
+    provinceIdMatch: 'PL_WP',
+    countryIso: '616',
+    city: 'Poznań',
+    countryName: 'Poland',
+    lat: 52.4064,
+    lon: 16.9252,
+    populationLabel: '541,000',
+    landmarks: ['Imperial Castle', 'Old Market', 'Warta Crossing'],
+    tier: 'major',
   },
   {
     id: 'nuuk',
-    name: 'Nuuk',
-    countryCode: '304',
-    provinceId: '304_p0',
+    countryIso: '304',
+    city: 'Nuuk',
+    countryName: 'Greenland',
     lat: 64.1814,
-    lng: -51.6941,
-    populationLabel: '20K',
-    strategicRole: {
-      en: 'Greenlandic Arctic Command & North Atlantic Gateway',
-      pl: 'Arktyczne Dowództwo Grenlandii i Brama Północna',
-      szl: 'Arktyczne Dowōdztwo Grynlandyje',
-      csb: 'Arkticzné Dowództwò Grenlandii',
-    },
+    lon: -51.6941,
+    populationLabel: '19,800',
+    landmarks: ['Nuuk Deep Fjord Port', 'Arctic Air Strip', 'Rare-Earth Terminal'],
+    tier: 'capital',
   },
   {
-    id: 'canberra',
-    name: 'Canberra',
-    countryCode: '036',
-    provinceId: '036_p0',
-    lat: -35.2809,
-    lng: 149.13,
-    populationLabel: '466K',
-    strategicRole: {
-      en: 'Indo-Pacific Deep-Space Telemetry & Naval Anchor',
-      pl: 'Telemetria Głębokiego Kosmosu i Pacyfik',
-      szl: 'Telemetrijo Kosmosu i Pacyfik',
-      csb: 'Telemetriô Kòsmòsu i Pacyfik',
-    },
+    id: 'berlin',
+    countryIso: '276',
+    city: 'Berlin',
+    countryName: 'Germany',
+    lat: 52.52,
+    lon: 13.405,
+    populationLabel: '3.75M',
+    landmarks: ['Brandenburg Gate', 'Reichstag', 'Spree Rail Axis'],
+    tier: 'capital',
+  },
+  {
+    id: 'kyiv',
+    countryIso: '804',
+    city: 'Kyiv',
+    countryName: 'Ukraine',
+    lat: 50.4501,
+    lon: 30.5234,
+    populationLabel: '2.95M',
+    landmarks: ['Dnieper Crossing', 'Independence Square', 'Kyiv Pechersk'],
+    tier: 'capital',
+  },
+  {
+    id: 'minsk',
+    countryIso: '112',
+    city: 'Minsk',
+    countryName: 'Belarus',
+    lat: 53.9006,
+    lon: 27.559,
+    populationLabel: '2.0M',
+    landmarks: ['Independence Avenue', 'Svislach Junction'],
+    tier: 'capital',
+  },
+  {
+    id: 'paris',
+    countryIso: '250',
+    city: 'Paris',
+    countryName: 'France',
+    lat: 48.8566,
+    lon: 2.3522,
+    populationLabel: '2.1M (Metro 11M)',
+    landmarks: ['Eiffel Tower', 'Seine Bridges', 'Île de la Cité'],
+    tier: 'capital',
+  },
+  {
+    id: 'london',
+    countryIso: '826',
+    city: 'London',
+    countryName: 'United Kingdom',
+    lat: 51.5072,
+    lon: -0.1276,
+    populationLabel: '8.9M',
+    landmarks: ['Thames Estuary', 'Westminster', 'Tower Bridge'],
+    tier: 'capital',
+  },
+  {
+    id: 'washington',
+    countryIso: '840',
+    city: 'Washington, D.C.',
+    countryName: 'United States',
+    lat: 38.9072,
+    lon: -77.0369,
+    populationLabel: '678,000 (Metro 6.3M)',
+    landmarks: ['National Mall', 'Potomac Command', 'Arlington'],
+    tier: 'capital',
+  },
+  {
+    id: 'new_york',
+    countryIso: '840',
+    city: 'New York',
+    countryName: 'United States',
+    lat: 40.7128,
+    lon: -74.006,
+    populationLabel: '8.3M',
+    landmarks: ['Manhattan Harbor', 'Atlantic Sea Hub'],
+    tier: 'major',
+  },
+  {
+    id: 'tokyo',
+    countryIso: '392',
+    city: 'Tokyo',
+    countryName: 'Japan',
+    lat: 35.6762,
+    lon: 139.6503,
+    populationLabel: '14.0M',
+    landmarks: ['Tokyo Bay', 'Imperial Palace', 'Shinkansen Hub'],
+    tier: 'capital',
+  },
+  {
+    id: 'beijing',
+    countryIso: '156',
+    city: 'Beijing',
+    countryName: 'China',
+    lat: 39.9042,
+    lon: 116.4074,
+    populationLabel: '21.8M',
+    landmarks: ['Forbidden City', 'North China Rail Corridor'],
+    tier: 'capital',
+  },
+  {
+    id: 'new_delhi',
+    countryIso: '356',
+    city: 'New Delhi',
+    countryName: 'India',
+    lat: 28.6139,
+    lon: 77.209,
+    populationLabel: '32.9M Metro',
+    landmarks: ['India Gate', 'Yamuna Corridor'],
+    tier: 'capital',
+  },
+  {
+    id: 'cairo',
+    countryIso: '818',
+    city: 'Cairo',
+    countryName: 'Egypt',
+    lat: 30.0444,
+    lon: 31.2357,
+    populationLabel: '22.1M Metro',
+    landmarks: ['Giza Plateau', 'Nile Delta', 'Suez Gateway'],
+    tier: 'capital',
+  },
+  {
+    id: 'rio',
+    countryIso: '076',
+    city: 'Brasília / Rio',
+    countryName: 'Brazil',
+    lat: -22.9068,
+    lon: -43.1729,
+    populationLabel: '6.7M',
+    landmarks: ['Guanabara Bay', 'South Atlantic Port'],
+    tier: 'major',
+  },
+  {
+    id: 'sydney',
+    countryIso: '036',
+    city: 'Sydney',
+    countryName: 'Australia',
+    lat: -33.8688,
+    lon: 151.2093,
+    populationLabel: '5.3M',
+    landmarks: ['Sydney Harbour', 'Pacific Port'],
+    tier: 'major',
   },
 ];
 
-export function getCityById(id: string | null): MajorCity | null {
-  if (!id) return null;
-  return MAJOR_CITIES.find((c) => c.id === id) ?? null;
+export function buildZeroKeyCityUrls(lat: number, lon: number): {
+  esriSatelliteUrl: string;
+  streetViewUrl: string;
+  osmUrl: string;
+} {
+  const esriSatelliteUrl = `https://www.arcgis.com/apps/mapviewer/index.html?center=${lon.toFixed(4)},${lat.toFixed(4)}&level=14&basemapUrl=https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer`;
+  const streetViewUrl = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat.toFixed(4)},${lon.toFixed(4)}`;
+  const osmUrl = `https://www.openstreetmap.org/#map=14/${lat.toFixed(4)}/${lon.toFixed(4)}`;
+  return { esriSatelliteUrl, streetViewUrl, osmUrl };
 }
 
-export function getCitiesForProvince(provinceId: string, countryCode?: string): MajorCity[] {
-  const exact = MAJOR_CITIES.filter((c) => c.provinceId === provinceId);
-  if (exact.length > 0) return exact;
-  if (countryCode) {
-    return MAJOR_CITIES.filter((c) => c.countryCode === countryCode);
-  }
-  return [];
-}
-
-/**
- * Convert geographic coordinates (WGS84 lat/lng) to slippy-map Web Mercator XYZ tile indices.
- */
-export function latLngToEsriTile(lat: number, lng: number, zoom: number): { x: number; y: number; z: number } {
-  const n = Math.pow(2, zoom);
-  const clampedLat = Math.max(-85.0511, Math.min(85.0511, lat));
-  const latRad = (clampedLat * Math.PI) / 180;
-  const x = Math.floor(((lng + 180) / 360) * n);
-  const y = Math.floor(
-    ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n,
-  );
+export function getCityReconForProvince(provinceId: string, countryIso: string, fallbackName: string, lon: number, lat: number): CityReconSpot {
+  const exact = CITY_RECON_SPOTS.find((c) => c.provinceIdMatch === provinceId || (c.countryIso === countryIso && c.tier === 'capital'));
+  if (exact) return exact;
   return {
-    x: ((x % n) + n) % n,
-    y: Math.max(0, Math.min(n - 1, y)),
-    z: zoom,
+    id: `spot_${provinceId}`,
+    countryIso,
+    city: fallbackName,
+    countryName: fallbackName,
+    lat,
+    lon,
+    populationLabel: 'Regional Center',
+    landmarks: ['Civic Citadel', 'Strategic Rail & Air Hub'],
+    tier: 'tactical',
   };
-}
-
-/**
- * 100% Free Esri World Imagery XYZ tile URL (no API key, no watermarks).
- */
-export function getEsriTileUrl(z: number, x: number, y: number): string {
-  return `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
-}
-
-/**
- * Direct Google Maps Street View panorama external URL (no API key required).
- */
-export function getGoogleMapsStreetViewUrl(lat: number, lng: number): string {
-  return `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat.toFixed(4)},${lng.toFixed(4)}`;
 }

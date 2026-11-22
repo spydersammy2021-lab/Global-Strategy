@@ -4,7 +4,6 @@ import {
   FlaskConical,
   Globe,
   Landmark,
-  Rocket,
   Scale,
   Swords,
 } from 'lucide-react';
@@ -17,7 +16,6 @@ export function LeftToolbar({
   isSpectator,
   onToggleDrawer,
   onOpenTechTree,
-  onOpenSpaceOcean,
   onOpenCouncilModal,
   t,
 }: {
@@ -25,7 +23,6 @@ export function LeftToolbar({
   isSpectator: boolean;
   onToggleDrawer: (drawer: Exclude<LeftDrawerId, null>) => void;
   onOpenTechTree: () => void;
-  onOpenSpaceOcean: () => void;
   onOpenCouncilModal: () => void;
   t: Translations;
 }) {
@@ -75,21 +72,12 @@ export function LeftToolbar({
     },
     {
       id: 'government',
-      label: 'Cabinet & Ideology',
+      label: 'Cabinet, Faiths & Legacy',
       icon: <Landmark size={18} className="text-purple-400" />,
       active: activeDrawer === 'government',
       hiddenInSpectator: true,
       testId: 'rail-government-btn',
       onClick: () => onToggleDrawer('government'),
-    },
-    {
-      id: 'space',
-      label: t.spaceOceanBtn,
-      icon: <Rocket size={18} className="text-orange-400" />,
-      active: false,
-      hiddenInSpectator: true,
-      testId: 'space-ocean-btn',
-      onClick: onOpenSpaceOcean,
     },
     {
       id: 'council',

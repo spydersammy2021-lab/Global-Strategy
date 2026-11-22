@@ -7,11 +7,15 @@ import type { EffectiveTier } from '../game/types';
 export function AnimatedMenuMapBg({
   effectiveTier,
   fpsCap = 'unlimited',
+  paused = false,
 }: {
   effectiveTier: EffectiveTier;
   fpsCap?: FpsCap;
+  paused?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
   const mapData = useMemo(() => buildWorldMapData(), []);
 
   const cachedPaths = useMemo(() => {
@@ -47,7 +51,7 @@ export function AnimatedMenuMapBg({
 
   const offscreenMap = useMemo(() => {
     if (typeof document === 'undefined') return null;
-    const scale = 1.6;
+    const scale = 1.0;
     const off = document.createElement('canvas');
     off.width = Math.round(WORLD_WIDTH * scale);
     off.height = Math.round(WORLD_HEIGHT * scale);
@@ -93,6 +97,7 @@ export function AnimatedMenuMapBg({
     let animId = 0;
     let width = window.innerWidth || 1440;
     let height = window.innerHeight || 900;
+    let hasDrawnOnce = false;
 
     const resize = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, effectiveTier === 'light' ? 1 : 1.5);
@@ -106,7 +111,8 @@ export function AnimatedMenuMapBg({
     resize();
     window.addEventListener('resize', resize);
 
-    let lastDraw = 0;
+    let lastDrawEnd = 0;
+    let lastDrawDuration = 0;
     const capInterval = getFpsCapIntervalMs(fpsCap);
     const minStep =
       effectiveTier === 'light'
@@ -117,9 +123,14 @@ export function AnimatedMenuMapBg({
 
     const render = (now: number) => {
       animId = requestAnimationFrame(render);
-      if (minStep > 0 && now - lastDraw < minStep) return;
-      lastDraw = now;
+      if (pausedRef.current && hasDrawnOnce) return;
 
+      const softwareYield =
+        lastDrawDuration > 8 ? Math.min(160, Math.max(60, lastDrawDuration * 2.2)) : 0;
+      const requiredGap = Math.max(minStep, softwareYield);
+      if (requiredGap > 0 && now - lastDrawEnd < requiredGap) return;
+
+      const drawStart = performance.now();
       const dpr = Math.min(window.devicePixelRatio || 1, effectiveTier === 'light' ? 1 : 1.5);
       const t = now * 0.00014;
       const panX = WORLD_WIDTH * 0.52 + Math.sin(t) * 140;
@@ -187,6 +198,10 @@ export function AnimatedMenuMapBg({
       ctx.fillStyle = vignette;
       ctx.fillRect(0, 0, width, height);
       ctx.restore();
+
+      hasDrawnOnce = true;
+      lastDrawEnd = performance.now();
+      lastDrawDuration = lastDrawEnd - drawStart;
     };
 
     animId = requestAnimationFrame(render);

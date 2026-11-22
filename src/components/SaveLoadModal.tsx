@@ -47,7 +47,7 @@ export function SaveLoadModal({
       accountId: account.id,
       label,
       scenarioId: currentState.scenarioId,
-      playerCountryId: currentState.playerCountryId,
+      countryId: currentState.playerCountryId,
       turn: currentState.turn,
       year: currentState.year,
       areaKm2: sum?.areaKm2 ?? topLeader?.areaKm2 ?? 0,

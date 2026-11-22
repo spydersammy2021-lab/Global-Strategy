@@ -149,7 +149,7 @@ export function GlobalStrategyTitleLockup() {
           GLOBAL STRATEGY
         </h1>
         <div className="text-[10px] font-mono-num font-bold tracking-[0.2em] text-amber-300 mt-1.5">
-          VERSION 3.0 · APEX EDITION
+          VERSION 4.0 · APEX EDITION
         </div>
       </div>
     </div>

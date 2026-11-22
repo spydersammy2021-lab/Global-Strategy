@@ -1,10 +1,36 @@
 import React from 'react';
-import { Bot, Gauge, Globe, Layout, Mic, Monitor, Volume2, VolumeX, X } from 'lucide-react';
+import {
+  Bot,
+  Flame,
+  Gauge,
+  Globe,
+  Layout,
+  Mic,
+  Monitor,
+  ShieldCheck,
+  Volume2,
+  VolumeX,
+  X,
+} from 'lucide-react';
+import { AI_AGGRESSIVENESS_CONFIG } from '../data/scenarios';
 import { type FpsCap, glassClass } from '../game/performance';
-import type { EffectiveTier, Language, PerformanceMode, UiMode } from '../game/types';
-import { LANGUAGE_LABELS, type Translations } from '../i18n/translations';
+import type {
+  AiAggressiveness,
+  EffectiveTier,
+  Language,
+  PerformanceMode,
+  UiMode,
+} from '../game/types';
+import {
+  AI_AGGRESSIVENESS_TEXT,
+  LANGUAGE_LABELS,
+  UI_MODE_TEXT,
+  type Translations,
+} from '../i18n/translations';
 
 const FPS_OPTIONS: FpsCap[] = [60, 120, 144, 'unlimited'];
+const UI_MODES: UiMode[] = ['very_easy', 'easy', 'hard', 'extended', 'ultra_realistic'];
+const AI_AGGRS: AiAggressiveness[] = ['friendly', 'normal', 'aggressive', 'hyper'];
 
 export function SettingsModal({
   isOpen,
@@ -24,6 +50,10 @@ export function SettingsModal({
   onToggleVoice,
   uiMode,
   onChangeUiMode,
+  peacefulStartEnabled = true,
+  onTogglePeacefulStart,
+  aiAggressiveness = 'normal',
+  onChangeAiAggressiveness,
   t,
 }: {
   isOpen: boolean;
@@ -43,21 +73,26 @@ export function SettingsModal({
   onToggleVoice?: () => void;
   uiMode: UiMode;
   onChangeUiMode: (mode: UiMode) => void;
+  peacefulStartEnabled?: boolean;
+  onTogglePeacefulStart?: () => void;
+  aiAggressiveness?: AiAggressiveness;
+  onChangeAiAggressiveness?: (aggr: AiAggressiveness) => void;
   t: Translations;
 }) {
   if (!isOpen) return null;
 
   return (
     <div
+      data-testid="settings-modal"
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="settings-title"
     >
-      <div className={`w-full max-w-md rounded-2xl border shadow-2xl overflow-hidden ${glassClass(effectiveTier)}`}>
+      <div className={`w-full max-w-lg rounded-2xl border shadow-2xl overflow-hidden ${glassClass(effectiveTier)}`}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800/80 bg-slate-950/60">
           <h2 id="settings-title" className="font-display text-base font-bold text-white">
-            {t.settings}
+            {t.settings} — VERSION 4.0
           </h2>
           <button
             type="button"
@@ -70,7 +105,64 @@ export function SettingsModal({
         </div>
 
         <div className="p-6 space-y-5 max-h-[82vh] overflow-y-auto gs-scroll">
-          {/* Uncapped / Configurable Frame Rate Limit Selector */}
+          {/* Peaceful Start & War Acceptance Toggle (ON by default) */}
+          {onTogglePeacefulStart && (
+            <div className="rounded-xl border border-emerald-500/35 bg-emerald-950/20 p-3.5 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-xs font-bold text-emerald-200">
+                  <ShieldCheck size={16} className="text-emerald-400 shrink-0" />
+                  <span>{t.peacefulStartLabel}</span>
+                </div>
+                <button
+                  type="button"
+                  data-testid="settings-peaceful-start-toggle"
+                  onClick={onTogglePeacefulStart}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-extrabold cursor-pointer shrink-0 ${
+                    peacefulStartEnabled
+                      ? 'bg-emerald-500 text-slate-950'
+                      : 'bg-slate-800 text-slate-300'
+                  }`}
+                >
+                  {peacefulStartEnabled ? 'ON' : 'OFF'}
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-300 leading-snug">{t.peacefulStartDesc}</p>
+            </div>
+          )}
+
+          {/* AI Aggressiveness Control */}
+          {onChangeAiAggressiveness && (
+            <div>
+              <div className="flex items-center gap-2 text-xs font-semibold text-slate-300 mb-2">
+                <Flame size={14} className="text-rose-400" />
+                {t.aiAggressivenessLabel}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                {AI_AGGRS.map((aggr) => {
+                  const active = aiAggressiveness === aggr;
+                  const spec = AI_AGGRESSIVENESS_CONFIG[aggr];
+                  return (
+                    <button
+                      key={aggr}
+                      type="button"
+                      data-testid={`settings-ai-aggr-${aggr}`}
+                      onClick={() => onChangeAiAggressiveness(aggr)}
+                      style={active ? { borderColor: spec.color } : undefined}
+                      className={`py-2 px-2 rounded-lg border text-[11px] font-bold text-center transition-colors cursor-pointer ${
+                        active
+                          ? 'bg-slate-800 text-white'
+                          : 'border-slate-800 bg-slate-950/60 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      {AI_AGGRESSIVENESS_TEXT[lang][aggr].label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Frame Rate Limit Selector */}
           {onChangeFpsCap && (
             <div>
               <div className="flex items-center gap-2 text-xs font-semibold text-slate-300 mb-2">
@@ -100,32 +192,26 @@ export function SettingsModal({
             </div>
           )}
 
-          {/* 3-Tier Visual Interface Mode Switcher */}
+          {/* 5-Tier Visual Interface Mode Switcher */}
           <div>
             <div className="flex items-center gap-2 text-xs font-semibold text-slate-300 mb-2">
               <Layout size={14} className="text-amber-400" />
               {t.uiModeLabel}
             </div>
-            <div className="grid grid-cols-3 gap-1.5">
-              {(
-                [
-                  { id: 'very_easy', label: t.uiVeryEasy },
-                  { id: 'easy', label: t.uiEasy },
-                  { id: 'hard', label: t.uiHard },
-                ] as const
-              ).map((m) => (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+              {UI_MODES.map((mId) => (
                 <button
-                  key={m.id}
+                  key={mId}
                   type="button"
-                  data-testid={`settings-uimode-${m.id}`}
-                  onClick={() => onChangeUiMode(m.id)}
+                  data-testid={`settings-uimode-${mId}`}
+                  onClick={() => onChangeUiMode(mId)}
                   className={`py-2 px-2 rounded-lg border text-[11px] font-bold text-center transition-colors cursor-pointer ${
-                    uiMode === m.id
+                    uiMode === mId
                       ? 'border-amber-400 bg-amber-500/20 text-amber-200'
                       : 'border-slate-800 bg-slate-950/60 text-slate-300 hover:border-slate-700'
                   }`}
                 >
-                  {m.label}
+                  {UI_MODE_TEXT[lang][mId]}
                 </button>
               ))}
             </div>
@@ -155,7 +241,7 @@ export function SettingsModal({
             </div>
           </div>
 
-          {/* 3-Tier Performance Switcher */}
+          {/* Performance Tier Switcher */}
           <div>
             <div className="flex items-center gap-2 text-xs font-semibold text-slate-300 mb-2">
               <Monitor size={14} className="text-emerald-400" />

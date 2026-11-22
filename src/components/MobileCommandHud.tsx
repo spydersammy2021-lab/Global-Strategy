@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   ArrowRight,
+  Award,
   Bot,
   ChevronDown,
   Coins,
@@ -17,10 +18,12 @@ import {
   Play,
   Rocket,
   Save,
+  Scale,
   Settings,
   Swords,
   Thermometer,
   TrainFront,
+  TrendingUp,
   Trophy,
   UserCheck,
   UserPlus,
@@ -38,6 +41,17 @@ type MobileSheet = 'empire' | 'province' | 'warfare' | 'more' | null;
 
 const MOBILE_BUILDINGS: BuildingType[] = ['farm', 'factory', 'barracks', 'fort', 'university', 'railway'];
 
+const MOBILE_OVERLAY_CYCLE: MapOverlayMode[] = [
+  'political',
+  'thermal',
+  'religions',
+  'cultures',
+  'economy',
+  'resources',
+  'diplomacy',
+  'logistics',
+];
+
 export function MobileCommandHud({
   gameState,
   summaries,
@@ -54,8 +68,10 @@ export function MobileCommandHud({
   onRecruit,
   onBuild,
   onAssimilate,
+  onDevelopProvince,
   onIssueOrder,
   onDiplomacy,
+  onOpenPeaceConference,
   onOpenTechTree,
   onOpenSpaceOcean,
   onOpenCouncil,
@@ -85,8 +101,10 @@ export function MobileCommandHud({
   onRecruit: (provId: string, unit: UnitType, count: number) => void;
   onBuild: (provId: string, b: BuildingType) => void;
   onAssimilate: (provId: string) => void;
+  onDevelopProvince?: (provId: string) => void;
   onIssueOrder: (fromId: string, toId: string, ratio: number) => void;
   onDiplomacy: (targetId: string, action: DiplomacyAction) => void;
+  onOpenPeaceConference?: (enemyId: string) => void;
   onOpenTechTree: () => void;
   onOpenSpaceOcean: () => void;
   onOpenCouncil: () => void;
@@ -126,28 +144,32 @@ export function MobileCommandHud({
   return (
     <div data-testid="mobile-command-hud" className="md:hidden pointer-events-none fixed inset-0 z-30 flex flex-col justify-between">
       {/* Compact Top Header Bar */}
-      <header className="pointer-events-auto flex items-center justify-between gap-1.5 px-2.5 py-1.5 border-b aoh-hud-bar">
-        <div className="flex items-center gap-2 min-w-0">
+      <header className="pointer-events-auto flex items-center justify-between gap-1 px-2 py-1.5 border-b aoh-hud-bar">
+        <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
           {player ? (
-            <FlagBadge flag={player.flag} width={30} height={20} />
+            <FlagBadge flag={player.flag} width={28} height={18} />
           ) : (
-            <Bot size={18} className="text-sky-300 shrink-0" />
+            <Bot size={16} className="text-sky-300 shrink-0" />
           )}
           {player && summary ? (
-            <div className="min-w-0 leading-tight">
-              <div className="text-[11px] font-bold text-white truncate max-w-[90px]">
+            <div className="min-w-0 flex-1 leading-tight">
+              <div className="text-[11px] font-bold text-white truncate">
                 {player.displayName}
               </div>
-              <div className="flex items-center gap-1.5 text-[10px] font-mono-num whitespace-nowrap">
+              <div className="flex items-center gap-1.5 text-[9.5px] font-mono-num whitespace-nowrap">
                 <span className="text-amber-300 font-bold whitespace-nowrap">{player.treasury.toFixed(0)} PLN</span>
+                <span className="text-violet-300 font-bold flex items-center gap-0.5 whitespace-nowrap">
+                  <Award size={9} />
+                  Lv.{gameState.commanderLevel ?? 1}
+                </span>
                 <span className="text-sky-300 flex items-center gap-0.5 whitespace-nowrap">
-                  <Thermometer size={10} />
+                  <Thermometer size={9} />
                   {warming}
                 </span>
               </div>
             </div>
           ) : (
-            <span className="text-xs font-bold text-sky-200">{t.botModeLabel}</span>
+            <span className="text-xs font-bold text-sky-200 truncate">{t.botModeLabel}</span>
           )}
         </div>
 
@@ -156,23 +178,20 @@ export function MobileCommandHud({
             <button
               type="button"
               onClick={() => {
-                const next: MapOverlayMode =
-                  mapOverlayMode === 'political'
-                    ? 'thermal'
-                    : mapOverlayMode === 'thermal'
-                    ? 'logistics'
-                    : 'political';
+                const idx = MOBILE_OVERLAY_CYCLE.indexOf(mapOverlayMode);
+                const next = MOBILE_OVERLAY_CYCLE[(idx + 1) % MOBILE_OVERLAY_CYCLE.length];
                 onChangeMapOverlay(next);
               }}
               aria-label="Map View Mode"
-              className="min-h-[38px] min-w-[38px] px-1.5 flex items-center justify-center rounded-lg border border-slate-700 bg-slate-950/90 text-amber-300 cursor-pointer"
+              title={mapOverlayMode}
+              className="min-h-[34px] min-w-[34px] px-1.5 flex items-center justify-center gap-0.5 rounded-lg border border-slate-700 bg-slate-950/90 text-amber-300 text-[9.5px] font-mono-num font-bold uppercase cursor-pointer"
             >
               {mapOverlayMode === 'thermal' ? (
-                <Flame size={14} className="text-orange-400" />
+                <Flame size={13} className="text-orange-400" />
               ) : mapOverlayMode === 'logistics' ? (
-                <TrainFront size={14} className="text-sky-400" />
+                <TrainFront size={13} className="text-sky-400" />
               ) : (
-                <Globe size={14} />
+                <Globe size={13} />
               )}
             </button>
           )}
@@ -182,13 +201,13 @@ export function MobileCommandHud({
               type="button"
               onClick={onToggleAutoPilot}
               aria-label={t.autoPilotToggle}
-              className={`min-h-[38px] min-w-[38px] px-2 flex items-center justify-center gap-1 rounded-lg border text-[10px] font-bold cursor-pointer ${
+              className={`min-h-[34px] min-w-[34px] px-1.5 flex items-center justify-center gap-0.5 rounded-lg border text-[9.5px] font-bold cursor-pointer ${
                 gameState.autoPilotEnabled
                   ? 'border-cyan-400 bg-cyan-500/25 text-cyan-200'
                   : 'border-slate-700 bg-slate-950/90 text-slate-300'
               }`}
             >
-              <Cpu size={14} />
+              <Cpu size={13} />
               <span>AI</span>
             </button>
           )}
@@ -197,13 +216,13 @@ export function MobileCommandHud({
             type="button"
             onClick={onToggleSimPause}
             aria-label="Toggle Pause"
-            className={`min-h-[38px] min-w-[38px] px-2 flex items-center justify-center rounded-lg border text-[10px] font-mono-num font-bold cursor-pointer ${
+            className={`min-h-[34px] min-w-[34px] px-1.5 flex items-center justify-center rounded-lg border text-[10px] font-mono-num font-bold cursor-pointer ${
               gameState.simPaused
                 ? 'border-amber-400 bg-amber-400 text-slate-950'
                 : 'border-emerald-400/50 bg-emerald-500/20 text-emerald-200'
             }`}
           >
-            {gameState.simPaused ? <Pause size={14} /> : <Play size={14} />}
+            {gameState.simPaused ? <Pause size={13} /> : <Play size={13} />}
           </button>
 
           <button
@@ -213,18 +232,18 @@ export function MobileCommandHud({
               const idx = speeds.indexOf(gameState.simSpeed);
               onSetSimSpeed(speeds[(idx + 1) % speeds.length]);
             }}
-            className="min-h-[38px] px-2 rounded-lg border border-slate-700 bg-slate-950/90 text-[10px] font-mono-num font-bold text-white cursor-pointer"
+            className="min-h-[34px] px-1.5 rounded-lg border border-slate-700 bg-slate-950/90 text-[9.5px] font-mono-num font-bold text-white cursor-pointer whitespace-nowrap"
           >
-            {dayStr(gameState.day)} {monthShort} · {gameState.simSpeed}x
+            {dayStr(gameState.day)} {monthShort}·{gameState.simSpeed}x
           </button>
 
           <button
             type="button"
             onClick={onOpenSettings}
             aria-label={t.settings}
-            className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg border border-slate-700 bg-slate-950/90 text-slate-200 cursor-pointer"
+            className="min-h-[34px] min-w-[34px] flex items-center justify-center rounded-lg border border-slate-700 bg-slate-950/90 text-slate-200 cursor-pointer"
           >
-            <Settings size={15} />
+            <Settings size={14} />
           </button>
         </div>
       </header>
@@ -364,6 +383,17 @@ export function MobileCommandHud({
                         <UserPlus size={14} />
                         +2k {UNIT_NAMES[lang].infantry} ({getRecruitCost(gameState, prov.id, 'infantry', 2000)} PLN)
                       </button>
+                      {onDevelopProvince && (
+                        <button
+                          type="button"
+                          onClick={() => onDevelopProvince(prov.id)}
+                          disabled={player.treasury < 12 || player.movementPoints < 1}
+                          className="min-h-[44px] px-3 rounded-lg border border-sky-400/50 bg-sky-500/20 text-sky-200 font-bold flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40"
+                        >
+                          <TrendingUp size={14} />
+                          {t.developProvinceBtn}
+                        </button>
+                      )}
                     </div>
                   </>
                 ) : (
@@ -446,6 +476,19 @@ export function MobileCommandHud({
                         {t.proposeAlliance}
                       </button>
                     </div>
+                    {onOpenPeaceConference && player?.atWarWith.includes(selectedDipCountry) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpenSheet(null);
+                          onOpenPeaceConference(selectedDipCountry);
+                        }}
+                        className="w-full min-h-[44px] rounded-lg border border-amber-400/60 bg-amber-500/20 text-amber-200 font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Scale size={14} />
+                        {t.peaceConferenceBtn}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

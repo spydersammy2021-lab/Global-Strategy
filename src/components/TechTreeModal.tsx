@@ -1,170 +1,77 @@
 import React, { useMemo, useState } from 'react';
-import {
-  CheckCircle2,
-  FlaskConical,
-  Lock,
-  Play,
-  Route,
-  Shield,
-  Sparkles,
-  Trash2,
-  TrendingUp,
-  Truck,
-  X,
-} from 'lucide-react';
-import {
-  TECH_NODE_MAP,
-  TECH_TREE_NODES,
-  canUnlockTechNode,
-  planTechResearchPath,
-} from '../data/techTree';
-import { glassClass } from '../game/performance';
-import type { EffectiveTier, GameState, Language, TechBranch, TechNodeId } from '../game/types';
-import type { Translations } from '../i18n/translations';
-
-const BRANCH_META: Array<{
-  id: TechBranch;
-  row: number;
-  en: string;
-  pl: string;
-  accent: string;
-  border: string;
-  bg: string;
-}> = [
-  {
-    id: 'military',
-    row: 0,
-    en: 'Military & Deterrence',
-    pl: 'Wojsko i Odstraszanie',
-    accent: '#FB7185',
-    border: 'border-rose-500/45',
-    bg: 'bg-rose-500/10',
-  },
-  {
-    id: 'economy',
-    row: 1,
-    en: 'Economy & Industry',
-    pl: 'Ekonomia i Przemysł',
-    accent: '#FBBF24',
-    border: 'border-amber-500/45',
-    bg: 'bg-amber-500/10',
-  },
-  {
-    id: 'logistics',
-    row: 2,
-    en: 'Logistics & Orbital Frontier',
-    pl: 'Logistyka i Kosmos',
-    accent: '#38BDF8',
-    border: 'border-sky-500/45',
-    bg: 'bg-sky-500/10',
-  },
-];
-
-// Graph coordinate system (in SVG & CSS pixels inside scrollable canvas)
-const COL_WIDTH = 154;
-const ROW_HEIGHT = 124;
-const NODE_W = 138;
-const NODE_H = 88;
-const PAD_X = 14;
-const PAD_Y = 20;
-
-function nodeCenter(branch: TechBranch, tier: number): { x: number; y: number } {
-  const row = branch === 'military' ? 0 : branch === 'economy' ? 1 : 2;
-  return {
-    x: PAD_X + tier * COL_WIDTH + NODE_W / 2,
-    y: PAD_Y + row * ROW_HEIGHT + NODE_H / 2,
-  };
-}
+import { Check, Lock, Play, Route, X } from 'lucide-react';
+import { computeTechPath, TECH_TREE } from '../game/tech';
+import type { Country, Language, TechBranch } from '../game/types';
 
 export function TechTreeModal({
   isOpen,
   onClose,
-  state,
-  onResearchNode,
-  onPlanPath,
-  onClearQueue,
-  t,
+  country,
   lang,
-  effectiveTier = 'ultra',
+  onResearchTech,
+  onPlanTechQueue,
 }: {
   isOpen: boolean;
   onClose: () => void;
-  state: GameState;
-  onResearchNode: (nodeId: TechNodeId) => void;
-  onPlanPath: (nodeId: TechNodeId) => void;
-  onClearQueue: () => void;
-  t: Translations;
+  country: Country | null;
   lang: Language;
-  effectiveTier?: EffectiveTier;
+  onResearchTech: (techId: string) => void;
+  onPlanTechQueue: (queue: string[]) => void;
 }) {
-  const [selectedId, setSelectedId] = useState<TechNodeId>('mil_doctrine');
+  const [selectedId, setSelectedId] = useState<string>('mil_2');
 
-  const player = state.countries[state.playerCountryId];
-  const unlocked = useMemo(() => player?.unlockedTechs ?? [], [player?.unlockedTechs]);
-  const queue = useMemo(() => player?.techQueue ?? [], [player?.techQueue]);
+  const unlockedSet = useMemo(() => new Set(country?.unlockedTechIds ?? []), [country?.unlockedTechIds]);
+  const plannedPath = useMemo(
+    () => (country ? computeTechPath(selectedId, country.unlockedTechIds) : []),
+    [country, selectedId],
+  );
 
-  const previewPath = useMemo(() => {
-    return planTechResearchPath(unlocked, selectedId);
-  }, [unlocked, selectedId]);
+  if (!isOpen || !country) return null;
 
-  if (!isOpen || !player) return null;
+  const selectedNode = TECH_TREE.find((t) => t.id === selectedId) ?? TECH_TREE[0];
+  const branches: { id: TechBranch; title: string; color: string; rowY: number }[] = [
+    { id: 'military', title: 'Military & Night-Vision', color: '#F43F5E', rowY: 60 },
+    { id: 'economy', title: 'Economy & Arms Trade', color: '#F59E0B', rowY: 185 },
+    { id: 'logistics', title: 'Logistics, Rail & Orbit', color: '#38BDF8', rowY: 310 },
+  ];
 
-  const selectedDef = TECH_NODE_MAP[selectedId] ?? TECH_TREE_NODES[0];
-  const isUnlocked = unlocked.includes(selectedDef.id);
-  const canUnlockNow = canUnlockTechNode(unlocked, selectedDef.id);
-  const canAffordNow = player.researchPoints >= selectedDef.costRp;
-  const pathTotalRp = previewPath.reduce((s, id) => s + (TECH_NODE_MAP[id]?.costRp ?? 0), 0);
+  const getPos = (branch: TechBranch, tier: number) => {
+    const b = branches.find((br) => br.id === branch)!;
+    const x = 18 + (tier - 1) * 165;
+    return { x, y: b.rowY };
+  };
 
-  const boardW = PAD_X * 2 + 4 * COL_WIDTH + NODE_W;
-  const boardH = PAD_Y * 2 + 2 * ROW_HEIGHT + NODE_H;
+  const canInstantUnlock =
+    !unlockedSet.has(selectedNode.id) &&
+    selectedNode.prerequisites.every((p) => unlockedSet.has(p)) &&
+    country.researchPoints >= selectedNode.costRp;
 
   return (
     <div
-      data-testid="tech-tree-modal"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-3 sm:p-5"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-3 md:p-6"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="tech-tree-title"
+      aria-label="Interactive Tech Tree"
     >
-      <div
-        className={`w-full max-w-6xl rounded-2xl border shadow-2xl overflow-hidden flex flex-col max-h-[92vh] ${glassClass(
-          effectiveTier,
-        )}`}
-      >
+      <div className="w-full max-w-[1120px] royal-glass-modal rounded-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 border-b border-slate-800/80 bg-slate-950/75">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-sky-500/15 border border-sky-400/35 text-sky-300">
-              <FlaskConical size={18} />
-            </div>
-            <div>
-              <h2 id="tech-tree-title" className="font-display text-base sm:text-lg font-bold text-white">
-                {t.techTreeBtn} — APEX R&amp;D Matrix
-              </h2>
-              <div className="text-[11px] text-slate-400 font-mono-num">
-                Mil Lv.{player.tech.military} · Eco Lv.{player.tech.economy} · Log Lv.{player.tech.logistics} · {unlocked.length}/{TECH_TREE_NODES.length}
-              </div>
-            </div>
+        <div className="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-950/75">
+          <div>
+            <h2 className="font-display text-lg font-extrabold text-white">
+              APEX R&amp;D MATRIX — Interactive Visual Tech Tree
+            </h2>
+            <p className="text-xs text-slate-300 font-mono-num">
+              Mil Lv.{country.milLevel} · Eco Lv.{country.ecoLevel} · Log Lv.{country.logLevel} · {country.unlockedTechIds.length}/15 Researched
+            </p>
           </div>
-
-          <div className="flex items-center gap-2.5">
-            <div className="px-3 py-1.5 rounded-lg border border-sky-500/40 bg-sky-500/10 font-mono-num text-xs font-bold text-sky-200">
-              {Math.floor(player.researchPoints)} RP
-            </div>
-            {queue.length > 0 && (
-              <button
-                type="button"
-                onClick={onClearQueue}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20 text-xs font-semibold text-rose-200 cursor-pointer"
-              >
-                <Trash2 size={13} />
-                Clear Queue ({queue.length})
-              </button>
-            )}
+          <div className="flex items-center gap-3">
+            <span className="px-3 py-1 rounded-lg bg-sky-500/20 border border-sky-400/50 font-mono-num text-sm font-bold text-sky-200">
+              {Math.round(country.researchPoints)} RP
+            </span>
             <button
               type="button"
               onClick={onClose}
-              aria-label={t.close}
+              aria-label="Close"
               className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
             >
               <X size={18} />
@@ -172,179 +79,81 @@ export function TechTreeModal({
           </div>
         </div>
 
-        {/* Main Body: Interactive Node Graph + Right Inspector */}
-        <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden">
-          {/* Interactive Graph Viewport */}
-          <div className="flex-1 min-w-0 overflow-auto gs-scroll bg-[#050914] p-4">
-            {/* Branch Legend Row */}
-            <div className="flex flex-wrap items-center gap-2 mb-3">
-              {BRANCH_META.map((bm) => (
-                <div
-                  key={bm.id}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] font-bold text-slate-200 ${bm.border} ${bm.bg}`}
-                >
-                  {bm.id === 'military' ? (
-                    <Shield size={12} className="text-rose-400" />
-                  ) : bm.id === 'economy' ? (
-                    <TrendingUp size={12} className="text-amber-400" />
-                  ) : (
-                    <Truck size={12} className="text-sky-400" />
-                  )}
-                  <span>{lang === 'pl' ? bm.pl : bm.en}</span>
-                </div>
-              ))}
-              <span className="text-[11px] text-slate-400 ml-auto">
-                Click any node to inspect or plan an automatic prerequisite path.
-              </span>
-            </div>
-
-            <div
-              className="relative rounded-xl border border-slate-800/80 bg-[#070D1D]"
-              style={{ width: `${boardW}px`, height: `${boardH}px` }}
-            >
-              {/* SVG Connections Layer */}
-              <svg
-                width={boardW}
-                height={boardH}
-                className="absolute inset-0 pointer-events-none"
-                aria-hidden="true"
-              >
-                <defs>
-                  <marker
-                    id="techArrowMuted"
-                    markerWidth="6"
-                    markerHeight="6"
-                    refX="5"
-                    refY="3"
-                    orient="auto"
-                  >
-                    <path d="M0,0 L6,3 L0,6 Z" fill="#475569" />
-                  </marker>
-                  <marker
-                    id="techArrowActive"
-                    markerWidth="6"
-                    markerHeight="6"
-                    refX="5"
-                    refY="3"
-                    orient="auto"
-                  >
-                    <path d="M0,0 L6,3 L0,6 Z" fill="#38BDF8" />
-                  </marker>
-                  <marker
-                    id="techArrowDone"
-                    markerWidth="6"
-                    markerHeight="6"
-                    refX="5"
-                    refY="3"
-                    orient="auto"
-                  >
-                    <path d="M0,0 L6,3 L0,6 Z" fill="#10B981" />
-                  </marker>
-                </defs>
-
-                {TECH_TREE_NODES.map((node) =>
-                  node.prerequisites.map((preId) => {
-                    const pre = TECH_NODE_MAP[preId];
+        <div className="flex-1 overflow-y-auto gs-scroll p-4 grid grid-cols-1 lg:grid-cols-[1fr_290px] gap-4">
+          {/* Visual Node Graph Canvas */}
+          <div className="overflow-x-auto gs-scroll rounded-xl bg-slate-950/80 border border-slate-800 p-3">
+            <div className="relative" style={{ width: 830, height: 400 }}>
+              {/* SVG Connections */}
+              <svg width={830} height={400} className="absolute inset-0 pointer-events-none">
+                {TECH_TREE.map((node) => {
+                  const endPos = getPos(node.branch, node.tier);
+                  return node.prerequisites.map((preId) => {
+                    const pre = TECH_TREE.find((t) => t.id === preId);
                     if (!pre) return null;
-                    const c1 = nodeCenter(pre.branch, pre.tier);
-                    const c2 = nodeCenter(node.branch, node.tier);
-                    const x1 = c1.x + NODE_W / 2;
-                    const y1 = c1.y;
-                    const x2 = c2.x - NODE_W / 2 - 4;
-                    const y2 = c2.y;
-                    const mx = (x1 + x2) / 2;
-
-                    const bothDone = unlocked.includes(pre.id) && unlocked.includes(node.id);
-                    const inPath =
-                      (previewPath.includes(node.id) &&
-                        (previewPath.includes(pre.id) || unlocked.includes(pre.id))) ||
-                      (queue.includes(node.id) &&
-                        (queue.includes(pre.id) || unlocked.includes(pre.id)));
-
-                    const stroke = bothDone
-                      ? '#10B981'
-                      : inPath
-                      ? '#38BDF8'
-                      : '#334155';
-                    const marker = bothDone
-                      ? 'url(#techArrowDone)'
-                      : inPath
-                      ? 'url(#techArrowActive)'
-                      : 'url(#techArrowMuted)';
-
+                    const startPos = getPos(pre.branch, pre.tier);
+                    const x1 = startPos.x + 140;
+                    const y1 = startPos.y + 34;
+                    const x2 = endPos.x;
+                    const y2 = endPos.y + 34;
+                    const inPath = plannedPath.includes(node.id) && (plannedPath.includes(pre.id) || unlockedSet.has(pre.id));
+                    const bothDone = unlockedSet.has(node.id) && unlockedSet.has(pre.id);
                     return (
                       <path
-                        key={`${pre.id}->${node.id}`}
-                        d={`M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`}
+                        key={`${pre.id}_${node.id}`}
+                        d={`M ${x1} ${y1} C ${x1 + 25} ${y1}, ${x2 - 25} ${y2}, ${x2} ${y2}`}
                         fill="none"
-                        stroke={stroke}
-                        strokeWidth={bothDone || inPath ? 2.5 : 1.6}
-                        strokeDasharray={inPath && !bothDone ? '5 4' : undefined}
-                        markerEnd={marker}
+                        stroke={bothDone ? '#10B981' : inPath ? '#FBBF24' : 'rgba(148,163,184,0.35)'}
+                        strokeWidth={inPath || bothDone ? 2.6 : 1.6}
                       />
                     );
-                  }),
-                )}
+                  });
+                })}
               </svg>
 
-              {/* Interactive Tech Nodes */}
-              {TECH_TREE_NODES.map((node) => {
-                const row = node.branch === 'military' ? 0 : node.branch === 'economy' ? 1 : 2;
-                const left = PAD_X + node.tier * COL_WIDTH;
-                const top = PAD_Y + row * ROW_HEIGHT;
+              {/* Branch Labels */}
+              {branches.map((b) => (
+                <div
+                  key={b.id}
+                  style={{ top: b.rowY - 26, left: 18, color: b.color }}
+                  className="absolute text-xs font-bold uppercase tracking-wider"
+                >
+                  {b.title}
+                </div>
+              ))}
 
-                const done = unlocked.includes(node.id);
-                const ready = canUnlockTechNode(unlocked, node.id);
-                const affordable = player.researchPoints >= node.costRp;
-                const queueIdx = queue.indexOf(node.id);
-                const inPreview = !done && previewPath.includes(node.id);
+              {/* Nodes */}
+              {TECH_TREE.map((node) => {
+                const pos = getPos(node.branch, node.tier);
+                const unlocked = unlockedSet.has(node.id);
+                const avail = !unlocked && node.prerequisites.every((p) => unlockedSet.has(p));
                 const isSelected = selectedId === node.id;
-
-                const borderCls = done
-                  ? 'border-emerald-400/80 bg-emerald-950/55'
-                  : ready && affordable
-                  ? 'border-amber-400 bg-amber-950/45'
-                  : queueIdx !== -1 || inPreview
-                  ? 'border-sky-400 bg-sky-950/55'
-                  : ready
-                  ? 'border-slate-500 bg-slate-900/90'
-                  : 'border-slate-800 bg-slate-950/85 opacity-80';
-
+                const isQueued = country.plannedTechQueue.includes(node.id);
                 return (
                   <button
                     key={node.id}
                     type="button"
                     data-testid={`tech-node-${node.id}`}
                     onClick={() => setSelectedId(node.id)}
-                    style={{ left: `${left}px`, top: `${top}px`, width: `${NODE_W}px`, height: `${NODE_H}px` }}
-                    className={`absolute rounded-xl border p-2.5 text-left transition-all cursor-pointer flex flex-col justify-between ${borderCls} ${
-                      isSelected ? 'ring-2 ring-white/80 shadow-lg' : 'hover:border-slate-400'
+                    style={{ left: pos.x, top: pos.y, width: 140, height: 68 }}
+                    className={`absolute p-2 rounded-xl border text-left flex flex-col justify-between transition-colors cursor-pointer ${
+                      unlocked
+                        ? 'bg-emerald-500/20 border-emerald-400 text-emerald-100'
+                        : isSelected
+                          ? 'bg-amber-500/25 border-amber-300 text-white'
+                          : isQueued
+                            ? 'bg-sky-500/20 border-sky-400 text-sky-100'
+                            : avail
+                              ? 'bg-slate-900 border-amber-400/50 text-slate-100'
+                              : 'bg-slate-950/90 border-slate-800 text-slate-400'
                     }`}
                   >
-                    <div className="flex items-start justify-between gap-1.5">
-                      <span className="text-[11px] font-bold text-white leading-tight line-clamp-2">
-                        {node.title[lang]}
-                      </span>
-                      {done ? (
-                        <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
-                      ) : queueIdx !== -1 ? (
-                        <span className="px-1.5 py-0.5 rounded bg-sky-400 text-slate-950 font-mono-num text-[9px] font-extrabold shrink-0">
-                          #{queueIdx + 1}
-                        </span>
-                      ) : !ready ? (
-                        <Lock size={12} className="text-slate-500 shrink-0" />
-                      ) : (
-                        <Sparkles size={12} className="text-amber-300 shrink-0" />
-                      )}
+                    <div className="flex items-start justify-between gap-1">
+                      <span className="text-[11px] font-bold leading-tight line-clamp-2">{node.name[lang]}</span>
+                      {unlocked ? <Check size={12} className="text-emerald-300 shrink-0" /> : !avail && <Lock size={11} className="shrink-0" />}
                     </div>
-
-                    <div className="flex items-center justify-between text-[10px] font-mono-num pt-1 border-t border-white/10">
-                      <span className={done ? 'text-emerald-300' : affordable ? 'text-amber-300 font-bold' : 'text-slate-400'}>
-                        {done ? 'UNLOCKED' : `${node.costRp} RP`}
-                      </span>
-                      <span className="text-[9px] uppercase tracking-wider text-slate-400">
-                        T{node.tier + 1}
-                      </span>
+                    <div className="flex justify-between items-center font-mono-num text-[10px]">
+                      <span className="text-amber-300">{node.costRp} RP</span>
+                      <span>T{node.tier}</span>
                     </div>
                   </button>
                 );
@@ -352,114 +161,58 @@ export function TechTreeModal({
             </div>
           </div>
 
-          {/* Right Node Detail & Research Path Planner */}
-          <aside className="w-full lg:w-80 shrink-0 border-t lg:border-t-0 lg:border-l border-slate-800/80 bg-slate-950/60 p-4 flex flex-col justify-between gap-4 overflow-y-auto gs-scroll">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono-num uppercase tracking-wider px-2 py-0.5 rounded bg-slate-800 text-sky-300">
-                  {selectedDef.branch.toUpperCase()} · TIER {selectedDef.tier + 1}
-                </span>
-                <span className="text-xs font-mono-num font-bold text-amber-300">
-                  {selectedDef.costRp} RP
-                </span>
+          {/* Right Inspection & Path Planning Panel */}
+          <div className="p-4 rounded-xl bg-slate-950/85 border border-slate-800 flex flex-col justify-between space-y-4">
+            <div className="space-y-2.5">
+              <div className="text-[11px] font-mono-num uppercase text-amber-300">
+                {selectedNode.branch} · Tier {selectedNode.tier} · {selectedNode.costRp} RP
+              </div>
+              <h3 className="font-display text-base font-extrabold text-white">{selectedNode.name[lang]}</h3>
+              <p className="text-xs text-slate-300 leading-relaxed">{selectedNode.summary[lang]}</p>
+              <div className="px-2.5 py-1.5 rounded-lg bg-slate-900 border border-emerald-400/30 text-emerald-300 font-mono-num text-xs font-bold">
+                {selectedNode.effectTag}
               </div>
 
-              <h3 className="font-display text-base font-bold text-white leading-snug">
-                {selectedDef.title[lang]}
-              </h3>
-
-              <p className="text-xs text-slate-300 leading-relaxed">
-                {selectedDef.summary[lang]}
-              </p>
-
-              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-2.5 text-xs text-emerald-200 font-semibold">
-                {selectedDef.unlocks[lang]}
-              </div>
-
-              <div>
-                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                  Prerequisites
+              <div className="pt-2 border-t border-slate-800 space-y-1">
+                <div className="text-[11px] font-bold text-sky-300 flex items-center gap-1">
+                  <Route size={13} /> Planned Path ({plannedPath.length} steps)
                 </div>
-                {selectedDef.prerequisites.length === 0 ? (
-                  <div className="text-xs text-slate-400">Root node (no prerequisites)</div>
+                {plannedPath.length === 0 ? (
+                  <div className="text-[11px] text-emerald-300">Already unlocked!</div>
                 ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {selectedDef.prerequisites.map((preId) => {
-                      const pre = TECH_NODE_MAP[preId];
-                      const preDone = unlocked.includes(preId);
-                      return (
-                        <button
-                          key={preId}
-                          type="button"
-                          onClick={() => setSelectedId(preId)}
-                          className={`px-2 py-1 rounded-md border text-[11px] font-semibold cursor-pointer ${
-                            preDone
-                              ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-200'
-                              : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-sky-400'
-                          }`}
-                        >
-                          {preDone ? '✓ ' : ''}
-                          {pre?.title[lang]}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  plannedPath.map((pid, idx) => {
+                    const pn = TECH_TREE.find((t) => t.id === pid);
+                    return (
+                      <div key={pid} className="flex justify-between text-[11px] text-slate-200">
+                        <span>{idx + 1}. {pn?.name[lang]}</span>
+                        <span className="font-mono-num text-amber-300">{pn?.costRp} RP</span>
+                      </div>
+                    );
+                  })
                 )}
               </div>
-
-              {!isUnlocked && previewPath.length > 0 && (
-                <div className="rounded-xl border border-sky-500/30 bg-sky-500/10 p-3 space-y-1.5">
-                  <div className="flex items-center justify-between text-[11px] font-bold text-sky-200">
-                    <span className="flex items-center gap-1">
-                      <Route size={13} /> Planned Path ({previewPath.length} nodes)
-                    </span>
-                    <span className="font-mono-num">{pathTotalRp} RP</span>
-                  </div>
-                  <div className="space-y-1">
-                    {previewPath.map((pid, idx) => (
-                      <div key={pid} className="text-[11px] text-slate-200 flex justify-between font-mono-num">
-                        <span className="truncate">
-                          {idx + 1}. {TECH_NODE_MAP[pid]?.title[lang]}
-                        </span>
-                        <span className="text-sky-300 ml-2">{TECH_NODE_MAP[pid]?.costRp} RP</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
 
-            <div className="space-y-2 pt-2 border-t border-slate-800">
-              {isUnlocked ? (
-                <div className="w-full py-2.5 px-4 rounded-xl border border-emerald-500/40 bg-emerald-500/15 text-emerald-300 text-xs font-bold text-center">
-                  ✓ Technology Researched
-                </div>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    data-testid="research-now-btn"
-                    disabled={!canUnlockNow || !canAffordNow}
-                    onClick={() => onResearchNode(selectedDef.id)}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 text-xs font-extrabold cursor-pointer"
-                  >
-                    <Play size={14} fill="currentColor" />
-                    Research Now ({selectedDef.costRp} RP)
-                  </button>
-
-                  <button
-                    type="button"
-                    data-testid="plan-path-btn"
-                    onClick={() => onPlanPath(selectedDef.id)}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-sky-400/60 bg-sky-500/15 hover:bg-sky-500/25 text-sky-200 text-xs font-bold cursor-pointer"
-                  >
-                    <Route size={14} />
-                    Plan Research Path ({previewPath.length} steps)
-                  </button>
-                </>
-              )}
+            <div className="space-y-2">
+              <button
+                type="button"
+                disabled={!canInstantUnlock}
+                data-testid="tech-research-now-btn"
+                onClick={() => onResearchTech(selectedNode.id)}
+                className="w-full py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-slate-950 font-extrabold text-xs inline-flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Play size={13} fill="currentColor" /> Research Now ({selectedNode.costRp} RP)
+              </button>
+              <button
+                type="button"
+                disabled={plannedPath.length === 0}
+                onClick={() => onPlanTechQueue(plannedPath)}
+                className="w-full py-2 rounded-xl bg-sky-500/20 border border-sky-400/50 text-sky-200 font-bold text-xs disabled:opacity-40 cursor-pointer"
+              >
+                Auto-Queue Research Path ({plannedPath.length})
+              </button>
             </div>
-          </aside>
+          </div>
         </div>
       </div>
     </div>

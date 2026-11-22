@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   AlertTriangle,
   Anchor,
+  Award,
   Banknote,
   BookOpen,
   Briefcase,
@@ -20,16 +21,34 @@ import {
   Satellite,
   Scale,
   Shield,
+  ShieldAlert,
   ShieldCheck,
+  Sliders,
+  Sparkles,
+  SprayCan,
+  Star,
   Swords,
+  ThumbsDown,
+  ThumbsUp,
   Trash2,
   TrendingDown,
   TrendingUp,
   Trophy,
+  UserPlus,
   Users,
   X,
 } from 'lucide-react';
 import { getCountryEncyclopedia } from '../data/encyclopedia';
+import {
+  ANCIENT_FAITH_DECISIONS,
+  CIVILIZATION_LEGACY_PERKS,
+  CULTURE_LABELS,
+  REFORMABLE_EMPIRES,
+  RELIGION_LABELS,
+  RESOURCE_LABELS,
+  getCountryGraffitiSlogan,
+  getLeaderForCountry,
+} from '../data/leadersAndDemographics';
 import {
   CABINET_MINISTERS,
   MEGAPROJECTS,
@@ -45,12 +64,15 @@ import {
 } from '../game/combat';
 import type { BlackOpType, DiplomacyAction } from '../game/engine';
 import type {
+  BudgetSliders,
   CommodityId,
   GameState,
   IdeologyId,
   Language,
   MegaprojectId,
+  MilitaryGeneral,
   MinisterRole,
+  ReligionId,
   StraitBlockadeId,
   UnitType,
 } from '../game/types';
@@ -79,6 +101,97 @@ const ROLES: Array<{ id: MinisterRole; label: Record<'en' | 'pl', string> }> = [
   { id: 'intelligence', label: { en: 'Director of Intel', pl: 'Szef Wywiadu' } },
 ];
 
+const GENERAL_SPECIALTIES: Array<{ id: MilitaryGeneral['specialty']; label: string }> = [
+  { id: 'infantry', label: 'Infantry' },
+  { id: 'armor', label: 'Armor' },
+  { id: 'artillery', label: 'Artillery' },
+  { id: 'logistics', label: 'Logistics' },
+  { id: 'siege', label: 'Siege' },
+];
+
+const wikiPortraitCache = new Map<string, string | null>();
+
+function LeaderPortraitCard({
+  countryId,
+  countryName,
+  colorHex,
+  lang,
+}: {
+  countryId: string;
+  countryName: string;
+  colorHex: string;
+  lang: Language;
+}) {
+  const leader = getLeaderForCountry(countryId, countryName);
+  const [portraitUrl, setPortraitUrl] = useState<string | null>(() =>
+    wikiPortraitCache.get(leader.wikiTitle) ?? null,
+  );
+  const [imgFailed, setImgFailed] = useState(false);
+
+  useEffect(() => {
+    setImgFailed(false);
+    const cached = wikiPortraitCache.get(leader.wikiTitle);
+    if (cached !== undefined) {
+      setPortraitUrl(cached);
+      return;
+    }
+    setPortraitUrl(null);
+    if (typeof fetch === 'undefined') return;
+    const ctrl = new AbortController();
+    fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${leader.wikiTitle}`, {
+      signal: ctrl.signal,
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        const url: string | null = data?.thumbnail?.source ?? null;
+        wikiPortraitCache.set(leader.wikiTitle, url);
+        setPortraitUrl(url);
+      })
+      .catch(() => {
+        wikiPortraitCache.set(leader.wikiTitle, null);
+      });
+    return () => ctrl.abort();
+  }, [leader.wikiTitle]);
+
+  const initials = leader.fullName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('');
+
+  return (
+    <div
+      data-testid="leader-profile-card"
+      className="flex items-center gap-2.5 rounded-lg border border-slate-800 bg-slate-900/75 p-2"
+    >
+      {portraitUrl && !imgFailed ? (
+        <img
+          src={portraitUrl}
+          alt={leader.fullName}
+          referrerPolicy="no-referrer"
+          onError={() => setImgFailed(true)}
+          className="h-11 w-11 rounded-lg object-cover border border-amber-400/50 bg-slate-950 shrink-0"
+        />
+      ) : (
+        <div
+          style={{ borderColor: colorHex }}
+          className="h-11 w-11 rounded-lg border-2 bg-slate-950 flex flex-col items-center justify-center shrink-0 shadow-inner"
+        >
+          <Crown size={11} className="text-amber-400 mb-0.5" />
+          <span className="font-display text-xs font-extrabold text-white leading-none">
+            {initials || 'GL'}
+          </span>
+        </div>
+      )}
+      <div className="min-w-0">
+        <div className="text-[11.5px] font-extrabold text-white truncate">{leader.fullName}</div>
+        <div className="text-[10px] text-amber-300/90 truncate">{leader.title[lang]}</div>
+      </div>
+    </div>
+  );
+}
+
 export function LeftSlideDrawer({
   activeDrawer,
   onClose,
@@ -87,6 +200,10 @@ export function LeftSlideDrawer({
   inspectedCountryId,
   onSelectCountry,
   onDiplomacy,
+  onAdjustRelations,
+  onExtendedDiplomacy,
+  onSetVassalTribute,
+  onOpenPeaceConference,
   onDeploySpy,
   onLaunchSpySatellite,
   onBlackOp,
@@ -95,6 +212,7 @@ export function LeftSlideDrawer({
   onToggleStraitBlockade,
   onOpenLeaderboard,
   onSetTaxRate,
+  onUpdateBudgetSliders,
   onTakeLoan,
   onRepayLoan,
   onTradeMarket,
@@ -104,6 +222,10 @@ export function LeftSlideDrawer({
   onVoteCouncil,
   onCancelOrder,
   onBuildWarhead,
+  onRecruitGeneral,
+  onResurrectFaith,
+  onReformEmpire,
+  onUnlockLegacyPerk,
   t,
   lang,
 }: {
@@ -114,14 +236,23 @@ export function LeftSlideDrawer({
   inspectedCountryId: string | null;
   onSelectCountry: (countryId: string) => void;
   onDiplomacy: (targetId: string, action: DiplomacyAction) => void;
+  onAdjustRelations?: (targetId: string, direction: 'improve' | 'insult') => void;
+  onExtendedDiplomacy?: (targetId: string, action: 'guarantee' | 'sanctions' | 'lend_lease') => void;
+  onSetVassalTribute?: (vassalId: string, pct: number) => void;
+  onOpenPeaceConference?: (enemyId: string) => void;
   onDeploySpy: (targetId: string) => void;
   onLaunchSpySatellite?: (targetId: string) => void;
-  onBlackOp: (targetId: string, op: BlackOpType) => void;
+  onBlackOp: (
+    targetId: string,
+    op: BlackOpType,
+    options?: { targetProvinceId?: string; customSlogan?: string },
+  ) => void;
   onStrategicStrike: (targetProvinceId: string, isNuclear: boolean) => void;
   onDesignCustomUnit?: (unitType: 'tanks' | 'aviation' | 'naval_fleet', name: string) => void;
   onToggleStraitBlockade?: (straitId: StraitBlockadeId) => void;
   onOpenLeaderboard: () => void;
   onSetTaxRate: (rate: number) => void;
+  onUpdateBudgetSliders?: (sliders: Partial<BudgetSliders>) => void;
   onTakeLoan: (amount: 60 | 150) => void;
   onRepayLoan: (loanId: string) => void;
   onTradeMarket: (commodity: CommodityId, side: 'buy' | 'sell', qty?: number) => void;
@@ -131,6 +262,10 @@ export function LeftSlideDrawer({
   onVoteCouncil: (vote: 'yes' | 'no') => void;
   onCancelOrder: (orderId: string) => void;
   onBuildWarhead: () => void;
+  onRecruitGeneral?: (specialty: MilitaryGeneral['specialty']) => void;
+  onResurrectFaith?: (religionId: ReligionId) => void;
+  onReformEmpire?: (empireId: string) => void;
+  onUnlockLegacyPerk?: (perkId: string) => void;
   t: Translations;
   lang: Language;
 }) {
@@ -138,6 +273,7 @@ export function LeftSlideDrawer({
   const [budgetTab, setBudgetTab] = useState<'treasury' | 'market' | 'megaprojects'>('treasury');
   const [forgeClass, setForgeClass] = useState<'tanks' | 'aviation' | 'naval_fleet'>('tanks');
   const [forgeName, setForgeName] = useState('Blocks™ Apex Mk-III');
+  const [graffitiDraft, setGraffitiDraft] = useState('');
 
   if (!activeDrawer) return null;
 
@@ -167,6 +303,9 @@ export function LeftSlideDrawer({
   const hasAccess = player && inspected ? player.militaryAccessWith.includes(inspected.id) : false;
   const isVassal = player && inspected ? inspected.vassalOf === player.id : false;
   const isSpied = inspected ? isSpectator || inspected.spiedUntil >= state.turn : false;
+  const relationScore = player && inspected ? player.relations?.[inspected.id] ?? 0 : 0;
+  const isGuaranteed = player && inspected ? player.guarantees?.includes(inspected.id) ?? false : false;
+  const isSanctioned = player && inspected ? inspected.sanctionedBy?.includes(player.id) ?? false : false;
 
   const inspectedProvs = inspected
     ? Object.values(state.provinces).filter((p) => p.ownerId === inspected.id)
@@ -208,6 +347,14 @@ export function LeftSlideDrawer({
     WORLD_COUNCIL_RESOLUTIONS.find((r) => r.id === state.worldCouncil.activeResolutionId) ??
     WORLD_COUNCIL_RESOLUTIONS[0];
 
+  const sliders: BudgetSliders = player?.budgetSliders ?? {
+    taxRate: player?.taxRate ?? 18,
+    goodsSpending: 8,
+    investmentsSpending: 6,
+    researchSpending: 8,
+    militarySpending: 100,
+  };
+
   return (
     <section
       data-testid={`left-drawer-${activeDrawer}`}
@@ -233,7 +380,7 @@ export function LeftSlideDrawer({
       </div>
 
       <div className="flex-1 overflow-y-auto gs-scroll p-3.5 space-y-3 text-xs">
-        {/* 1. BUDGET & ECONOMY DRAWER */}
+        {/* 1. BUDGET & ECONOMY DRAWER (w/ 5 Sliders) */}
         {activeDrawer === 'budget' && player && budget && (
           <>
             <div className="grid grid-cols-3 gap-1 rounded-lg border border-slate-800 bg-slate-950/75 p-0.5 text-[11px] font-bold">
@@ -281,6 +428,112 @@ export function LeftSlideDrawer({
                   </div>
                 </div>
 
+                {/* 5 AoH2/3 Budget Sliders */}
+                <div
+                  data-testid="budget-sliders-panel"
+                  className="rounded-lg border border-amber-500/25 bg-slate-950/75 p-3 space-y-2.5"
+                >
+                  <div className="flex items-center justify-between text-[10.5px] font-bold uppercase text-amber-300">
+                    <span className="flex items-center gap-1.5">
+                      <Sliders size={12} /> State Budget Allocations
+                    </span>
+                    <span className="font-mono-num text-slate-400">Stab {player.stability}%</span>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-slate-300 flex items-center gap-1">
+                        <Percent size={11} className="text-amber-400" />
+                        {t.taxRateLabel}
+                      </span>
+                      <span className="font-mono-num font-bold text-amber-300">{player.taxRate}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={5}
+                      max={40}
+                      step={1}
+                      value={player.taxRate}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        onSetTaxRate(v);
+                        onUpdateBudgetSliders?.({ taxRate: v });
+                      }}
+                      aria-label={t.taxRateLabel}
+                      className="w-full accent-amber-500 cursor-pointer"
+                    />
+                  </div>
+
+                  {onUpdateBudgetSliders && (
+                    <>
+                      <div>
+                        <div className="flex justify-between text-[11px]">
+                          <span className="text-slate-300">Consumer Goods (Happiness)</span>
+                          <span className="font-mono-num font-bold text-emerald-300">{sliders.goodsSpending}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={30}
+                          value={sliders.goodsSpending}
+                          onChange={(e) => onUpdateBudgetSliders({ goodsSpending: Number(e.target.value) })}
+                          aria-label="Consumer Goods"
+                          className="w-full accent-emerald-500 cursor-pointer"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between text-[11px]">
+                          <span className="text-slate-300">Investments (Economy Growth)</span>
+                          <span className="font-mono-num font-bold text-amber-200">{sliders.investmentsSpending}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={30}
+                          value={sliders.investmentsSpending}
+                          onChange={(e) => onUpdateBudgetSliders({ investmentsSpending: Number(e.target.value) })}
+                          aria-label="Investments"
+                          className="w-full accent-amber-400 cursor-pointer"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between text-[11px]">
+                          <span className="text-slate-300">Research &amp; Science Funding</span>
+                          <span className="font-mono-num font-bold text-sky-300">{sliders.researchSpending}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={30}
+                          value={sliders.researchSpending}
+                          onChange={(e) => onUpdateBudgetSliders({ researchSpending: Number(e.target.value) })}
+                          aria-label="Research Funding"
+                          className="w-full accent-sky-400 cursor-pointer"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between text-[11px]">
+                          <span className="text-slate-300">Military Readiness Spending</span>
+                          <span className="font-mono-num font-bold text-rose-300">{sliders.militarySpending}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={50}
+                          max={150}
+                          step={5}
+                          value={sliders.militarySpending}
+                          onChange={(e) => onUpdateBudgetSliders({ militarySpending: Number(e.target.value) })}
+                          aria-label="Military Spending"
+                          className="w-full accent-rose-500 cursor-pointer"
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+
                 <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/5 p-3 space-y-1.5">
                   <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-400 uppercase">
                     <TrendingUp size={13} />
@@ -298,6 +551,12 @@ export function LeftSlideDrawer({
                     <span>{t.tradeIncomeLabel}</span>
                     <span className="font-mono-num font-bold text-emerald-300">+{budget.tradeIncome.toFixed(1)}</span>
                   </div>
+                  {budget.vassalTributeIncome > 0 && (
+                    <div className="flex justify-between text-slate-300">
+                      <span>{t.vassalIncomeLabel}</span>
+                      <span className="font-mono-num font-bold text-purple-300">+{budget.vassalTributeIncome.toFixed(1)}</span>
+                    </div>
+                  )}
                   {budget.spaceOceanIncome > 0 && (
                     <div className="flex justify-between text-slate-300">
                       <span>{t.spaceIncomeLabel}</span>
@@ -322,33 +581,6 @@ export function LeftSlideDrawer({
                   <div className="flex justify-between text-slate-300">
                     <span>{t.loanPaymentsLabel}</span>
                     <span className="font-mono-num font-bold text-rose-300">-{budget.loanPayments.toFixed(1)}</span>
-                  </div>
-                </div>
-
-                <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-200 flex items-center gap-1.5">
-                      <Percent size={13} className="text-amber-400" />
-                      {t.taxRateLabel}
-                    </span>
-                    <span className="font-mono-num font-bold text-amber-300">{player.taxRate}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={5}
-                    max={45}
-                    step={1}
-                    value={player.taxRate}
-                    onChange={(e) => onSetTaxRate(Number(e.target.value))}
-                    aria-label={t.taxRateLabel}
-                    className="w-full accent-amber-500 cursor-pointer"
-                  />
-                  <div className="text-[10.5px] text-slate-400">
-                    {player.taxRate > 25
-                      ? t.taxWarningHigh
-                      : player.taxRate <= 14
-                      ? t.taxBonusLow
-                      : `${t.stability}: ${player.stability}%`}
                   </div>
                 </div>
 
@@ -485,7 +717,7 @@ export function LeftSlideDrawer({
           </>
         )}
 
-        {/* 2. MILITARY, CUSTOM UNIT FORGE & MARITIME STRAITS DRAWER */}
+        {/* 2. MILITARY, GENERALS, CUSTOM UNIT FORGE & MARITIME STRAITS DRAWER */}
         {activeDrawer === 'military' && player && playerSummary && (
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-2">
@@ -501,6 +733,49 @@ export function LeftSlideDrawer({
                   {player.manpower.toLocaleString(numLocale)}
                 </div>
               </div>
+            </div>
+
+            {/* Generals & High Command */}
+            <div data-testid="military-generals-panel" className="rounded-lg border border-amber-500/30 bg-slate-950/75 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-amber-300 flex items-center gap-1.5 text-[10.5px] uppercase tracking-wider">
+                  <Award size={12} /> Generals &amp; Marshals ({(player.generals ?? []).length})
+                </span>
+              </div>
+              <div className="space-y-1.5 max-h-32 overflow-y-auto gs-scroll">
+                {(player.generals ?? []).map((gen) => (
+                  <div key={gen.id} className="rounded border border-slate-800 bg-slate-900/75 px-2.5 py-1.5 space-y-1">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-bold text-white truncate">{gen.name}</span>
+                      <span className="font-mono-num text-amber-300 font-bold">
+                        Lv.{gen.level} · {gen.specialty.toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-[9.5px] font-mono-num text-emerald-300">
+                      <span>+{gen.attackBonus}% ATK · +{gen.defenseBonus}% DEF · +{gen.speedBonus}% SPD</span>
+                      <span className="text-slate-400">{gen.xp} XP</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {onRecruitGeneral && (
+                <div className="pt-1 border-t border-slate-800/80 space-y-1">
+                  <div className="text-[10px] text-slate-400">Commission General (22 PLN):</div>
+                  <div className="flex flex-wrap gap-1">
+                    {GENERAL_SPECIALTIES.map((sp) => (
+                      <button
+                        key={sp.id}
+                        type="button"
+                        disabled={player.treasury < 22}
+                        onClick={() => onRecruitGeneral(sp.id)}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded border border-amber-500/40 bg-amber-500/15 hover:bg-amber-500/25 disabled:opacity-40 text-[10px] font-bold text-amber-200 cursor-pointer"
+                      >
+                        <UserPlus size={10} /> {sp.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3 space-y-1.5">
@@ -719,7 +994,7 @@ export function LeftSlideDrawer({
           </div>
         )}
 
-        {/* 3. DIPLOMACY, WORLD POWERS & INTEL DRAWER */}
+        {/* 3. DIPLOMACY, LEADER PORTRAIT, RELATIONS, PEACE CONFERENCE, COVERT GRAFFITI */}
         {activeDrawer === 'diplomacy' && (
           <div className="space-y-3">
             {player && (
@@ -766,7 +1041,7 @@ export function LeftSlideDrawer({
                   {t.chronicleTab} →
                 </button>
               </div>
-              <div className="space-y-1 max-h-36 overflow-y-auto gs-scroll pr-0.5">
+              <div className="space-y-1 max-h-32 overflow-y-auto gs-scroll pr-0.5">
                 {topCountries.map((entry, idx) => {
                   const c = state.countries[entry.countryId];
                   if (!c) return null;
@@ -811,7 +1086,30 @@ export function LeftSlideDrawer({
                   </div>
                 </div>
 
-                {player && (isAtWar || isAlly || truceTurns > 0 || napTurns > 0 || hasAccess || isVassal) && (
+                {/* Head of State Profile + Wikipedia Portrait w/ Monogram Fallback */}
+                <LeaderPortraitCard
+                  countryId={inspected.id}
+                  countryName={inspected.displayName || inspected.name[lang]}
+                  colorHex={inspected.color}
+                  lang={lang}
+                />
+
+                {/* Religion, Culture & Resource Badges */}
+                <div className="flex flex-wrap gap-1 text-[10px]">
+                  <span className="px-1.5 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-200">
+                    🛐 {RELIGION_LABELS[inspected.religion].name[lang]} ({Math.round(inspected.religionAdherence ?? 75)}%)
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded border border-pink-500/30 bg-pink-500/10 text-pink-200">
+                    🎭 {CULTURE_LABELS[inspected.culture].name[lang]}
+                  </span>
+                  {inspectedCapital && (
+                    <span className="px-1.5 py-0.5 rounded border border-lime-500/30 bg-lime-500/10 text-lime-200">
+                      ⛏️ {RESOURCE_LABELS[inspectedCapital.resource].name[lang]}
+                    </span>
+                  )}
+                </div>
+
+                {player && (isAtWar || isAlly || truceTurns > 0 || napTurns > 0 || hasAccess || isVassal || isGuaranteed || isSanctioned) && (
                   <div className="flex flex-wrap gap-1">
                     {isAtWar && (
                       <span className="px-1.5 py-0.5 rounded bg-rose-500/20 border border-rose-500/40 text-[10px] font-bold text-rose-300">
@@ -826,6 +1124,16 @@ export function LeftSlideDrawer({
                     {isVassal && (
                       <span className="px-1.5 py-0.5 rounded bg-purple-500/20 border border-purple-500/40 text-[10px] font-bold text-purple-300">
                         {t.vassalBadge}
+                      </span>
+                    )}
+                    {isGuaranteed && (
+                      <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/40 text-[10px] font-bold text-emerald-200">
+                        GUARANTEED
+                      </span>
+                    )}
+                    {isSanctioned && (
+                      <span className="px-1.5 py-0.5 rounded bg-orange-500/20 border border-orange-400/40 text-[10px] font-bold text-orange-200">
+                        SANCTIONED
                       </span>
                     )}
                     {napTurns > 0 && (
@@ -901,6 +1209,60 @@ export function LeftSlideDrawer({
 
                 {dipSubTab === 'diplomacy' && inspected.id !== state.playerCountryId && (
                   <div className="space-y-2">
+                    {/* Relation Meter (-100 .. +100) */}
+                    {player && (
+                      <div data-testid="relation-meter-box" className="rounded border border-slate-800 bg-slate-900/75 p-2 space-y-1.5">
+                        <div className="flex items-center justify-between text-[10.5px]">
+                          <span className="text-slate-400 font-semibold">Bilateral Relations</span>
+                          <span
+                            className={`font-mono-num font-extrabold ${
+                              relationScore >= 20
+                                ? 'text-emerald-400'
+                                : relationScore <= -20
+                                ? 'text-rose-400'
+                                : 'text-amber-300'
+                            }`}
+                          >
+                            {relationScore > 0 ? `+${relationScore}` : relationScore}
+                          </span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                          <div
+                            className={`h-full ${
+                              relationScore >= 20
+                                ? 'bg-emerald-500'
+                                : relationScore <= -20
+                                ? 'bg-rose-500'
+                                : 'bg-amber-400'
+                            }`}
+                            style={{ width: `${Math.round(((relationScore + 100) / 200) * 100)}%` }}
+                          />
+                        </div>
+                        {onAdjustRelations && (
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <button
+                              type="button"
+                              data-testid="improve-relations-btn"
+                              disabled={player.diplomacyPoints < 1}
+                              onClick={() => onAdjustRelations(inspected.id, 'improve')}
+                              className="flex items-center justify-center gap-1 py-1 rounded border border-emerald-500/40 bg-emerald-500/15 hover:bg-emerald-500/25 disabled:opacity-40 text-[10px] font-bold text-emerald-200 cursor-pointer"
+                            >
+                              <ThumbsUp size={10} /> Improve (+18)
+                            </button>
+                            <button
+                              type="button"
+                              data-testid="insult-relations-btn"
+                              disabled={player.diplomacyPoints < 1}
+                              onClick={() => onAdjustRelations(inspected.id, 'insult')}
+                              className="flex items-center justify-center gap-1 py-1 rounded border border-rose-500/40 bg-rose-500/15 hover:bg-rose-500/25 disabled:opacity-40 text-[10px] font-bold text-rose-200 cursor-pointer"
+                            >
+                              <ThumbsDown size={10} /> Insult (-24)
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     <div className="rounded border border-slate-800 bg-slate-900/75 p-2 grid grid-cols-2 gap-2">
                       {playerSummary && (
                         <div className="min-w-0">
@@ -966,14 +1328,27 @@ export function LeftSlideDrawer({
                             {t.declareWar}
                           </button>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={() => onDiplomacy(inspected.id, 'peace')}
-                            className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-xs font-bold text-white cursor-pointer"
-                          >
-                            <Handshake size={13} />
-                            {t.proposePeace}
-                          </button>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            {onOpenPeaceConference && (
+                              <button
+                                type="button"
+                                data-testid="open-peace-conference-btn"
+                                onClick={() => onOpenPeaceConference(inspected.id)}
+                                className="flex items-center justify-center gap-1 py-1.5 px-2 rounded bg-emerald-500 hover:bg-emerald-400 text-[11px] font-extrabold text-slate-950 cursor-pointer"
+                              >
+                                <Scale size={12} />
+                                <span className="truncate">{t.peaceConferenceBtn}</span>
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => onDiplomacy(inspected.id, 'peace')}
+                              className="flex items-center justify-center gap-1 py-1.5 px-2 rounded bg-sky-600 hover:bg-sky-500 text-[11px] font-bold text-white cursor-pointer"
+                            >
+                              <Handshake size={12} />
+                              <span className="truncate">{t.proposePeace}</span>
+                            </button>
+                          </div>
                         )}
 
                         {!isAtWar && (
@@ -1026,6 +1401,66 @@ export function LeftSlideDrawer({
                           </div>
                         )}
 
+                        {/* Extended Diplomacy: Guarantee, Sanctions, Lend-Lease */}
+                        {onExtendedDiplomacy && (
+                          <div className="grid grid-cols-3 gap-1">
+                            <button
+                              type="button"
+                              disabled={player.diplomacyPoints < 1}
+                              onClick={() => onExtendedDiplomacy(inspected.id, 'guarantee')}
+                              className={`py-1 px-1 rounded border text-[10px] font-semibold cursor-pointer truncate ${
+                                isGuaranteed
+                                  ? 'border-emerald-400 bg-emerald-500/20 text-emerald-200'
+                                  : 'border-slate-700 bg-slate-900 text-slate-300'
+                              }`}
+                            >
+                              {isGuaranteed ? '✓ Guarantee' : 'Guarantee'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={player.diplomacyPoints < 1}
+                              onClick={() => onExtendedDiplomacy(inspected.id, 'sanctions')}
+                              className={`py-1 px-1 rounded border text-[10px] font-semibold cursor-pointer truncate ${
+                                isSanctioned
+                                  ? 'border-orange-400 bg-orange-500/20 text-orange-200'
+                                  : 'border-slate-700 bg-slate-900 text-slate-300'
+                              }`}
+                            >
+                              {isSanctioned ? '✓ Sanctioned' : 'Sanctions'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={player.treasury < 20 || player.diplomacyPoints < 1}
+                              onClick={() => onExtendedDiplomacy(inspected.id, 'lend_lease')}
+                              className="py-1 px-1 rounded border border-sky-500/40 bg-sky-500/10 text-[10px] font-semibold text-sky-200 disabled:opacity-40 cursor-pointer truncate"
+                            >
+                              Lend-Lease 20
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Vassal Tribute Slider (0-45%) */}
+                        {isVassal && onSetVassalTribute && (
+                          <div className="rounded border border-purple-500/40 bg-purple-950/35 p-2 space-y-1">
+                            <div className="flex justify-between text-[10.5px]">
+                              <span className="font-bold text-purple-200">Vassal Tribute Rate</span>
+                              <span className="font-mono-num font-bold text-amber-300">
+                                {inspected.vassalTributePct ?? 22}%
+                              </span>
+                            </div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={45}
+                              step={5}
+                              value={inspected.vassalTributePct ?? 22}
+                              onChange={(e) => onSetVassalTribute(inspected.id, Number(e.target.value))}
+                              aria-label="Vassal Tribute Rate"
+                              className="w-full accent-purple-400 cursor-pointer"
+                            />
+                          </div>
+                        )}
+
                         <div className="grid grid-cols-2 gap-1.5">
                           <button
                             type="button"
@@ -1050,7 +1485,8 @@ export function LeftSlideDrawer({
                           )}
                         </div>
 
-                        <div className="rounded border border-slate-800 bg-slate-900/75 p-2 space-y-1">
+                        {/* Black Ops + Dynamic Country-Aware Covert Graffiti / Vandalism */}
+                        <div className="rounded border border-slate-800 bg-slate-900/75 p-2 space-y-1.5">
                           <div className="text-[10px] font-bold uppercase text-purple-300 flex items-center gap-1">
                             <Flame size={11} /> {t.blackOpsLabel}
                           </div>
@@ -1075,6 +1511,33 @@ export function LeftSlideDrawer({
                               className="py-1 px-1 rounded border border-purple-500/40 bg-purple-500/10 text-[10px] font-semibold text-purple-200 cursor-pointer truncate"
                             >
                               {t.stealTechOp}
+                            </button>
+                          </div>
+
+                          <div className="pt-1 border-t border-slate-800/80 space-y-1">
+                            <input
+                              type="text"
+                              value={graffitiDraft}
+                              onChange={(e) => setGraffitiDraft(e.target.value)}
+                              maxLength={28}
+                              placeholder={getCountryGraffitiSlogan(player.id, player.displayName)}
+                              aria-label="Custom Graffiti Slogan"
+                              className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-[10.5px] text-pink-200 placeholder:text-slate-500 focus:border-pink-400 focus:outline-none"
+                            />
+                            <button
+                              type="button"
+                              data-testid="covert-graffiti-btn"
+                              disabled={player.treasury < 14 || player.diplomacyPoints < 1}
+                              onClick={() =>
+                                onBlackOp(inspected.id, 'graffiti_vandalism', {
+                                  targetProvinceId: inspectedCapital?.id,
+                                  customSlogan: graffitiDraft.trim() || undefined,
+                                })
+                              }
+                              className="w-full flex items-center justify-center gap-1.5 py-1 px-2 rounded border border-pink-500/50 bg-pink-500/15 hover:bg-pink-500/25 disabled:opacity-40 text-[10.5px] font-bold text-pink-200 cursor-pointer"
+                            >
+                              <SprayCan size={11} />
+                              <span>{t.graffitiMissionBtn} (14 PLN · 1 DP)</span>
                             </button>
                           </div>
                         </div>
@@ -1130,9 +1593,114 @@ export function LeftSlideDrawer({
           </div>
         )}
 
-        {/* 4. GOVERNMENT, CABINET, IDEOLOGY & WORLD COUNCIL DRAWER */}
+        {/* 4. GOVERNMENT, LEGACY, ANCIENT FAITHS, HISTORIC EMPIRES & WORLD COUNCIL */}
         {activeDrawer === 'government' && player && (
           <div className="space-y-3">
+            {/* Civilization Legacy Points & Perks */}
+            <div data-testid="legacy-perks-panel" className="rounded-lg border border-amber-500/35 bg-amber-500/10 p-2.5 space-y-2">
+              <div className="flex items-center justify-between text-[10.5px] font-bold uppercase text-amber-300">
+                <span className="flex items-center gap-1.5">
+                  <Star size={12} /> Civilization Legacy
+                </span>
+                <span className="font-mono-num text-white">{player.legacyPoints ?? 0} LP</span>
+              </div>
+              <div className="space-y-1.5">
+                {CIVILIZATION_LEGACY_PERKS.map((perk) => {
+                  const unlocked = player.unlockedLegacyPerks?.includes(perk.id);
+                  return (
+                    <div key={perk.id} className="flex items-center justify-between gap-2 text-[10.5px] rounded border border-slate-800/80 bg-slate-950/75 px-2 py-1.5">
+                      <div className="min-w-0">
+                        <div className="font-bold text-white truncate">{perk.name[lang]}</div>
+                        <div className="text-[10px] text-emerald-300 truncate">{perk.effect[lang]}</div>
+                      </div>
+                      {unlocked ? (
+                        <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
+                      ) : (
+                        onUnlockLegacyPerk && (
+                          <button
+                            type="button"
+                            disabled={(player.legacyPoints ?? 0) < perk.costLegacy}
+                            onClick={() => onUnlockLegacyPerk(perk.id)}
+                            className="px-2 py-1 rounded bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 text-[10px] font-bold cursor-pointer shrink-0"
+                          >
+                            {perk.costLegacy} LP
+                          </button>
+                        )
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Resurrect Ancient Faiths */}
+            {onResurrectFaith && (
+              <div className="rounded-lg border border-purple-500/35 bg-purple-950/25 p-2.5 space-y-1.5">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-purple-300 flex items-center gap-1.5">
+                  <Sparkles size={12} /> Resurrect Ancient Faiths
+                </div>
+                {ANCIENT_FAITH_DECISIONS.map((dec) => {
+                  const active = player.resurrectedFaithId === dec.religionId;
+                  return (
+                    <div key={dec.religionId} className="flex items-center justify-between gap-2 py-1 border-b border-slate-800/60 last:border-0 text-[10.5px]">
+                      <div className="min-w-0">
+                        <div className="font-bold text-white truncate">{dec.name[lang]}</div>
+                        <div className="text-[9.5px] text-purple-200">{dec.bonusText[lang]}</div>
+                      </div>
+                      {active ? (
+                        <span className="text-[10px] font-bold text-emerald-400 shrink-0">ACTIVE</span>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={player.treasury < dec.costPln || player.diplomacyPoints < dec.costDp}
+                          onClick={() => onResurrectFaith(dec.religionId)}
+                          className="px-2 py-1 rounded bg-purple-500 hover:bg-purple-400 disabled:opacity-40 text-slate-950 text-[10px] font-bold cursor-pointer shrink-0 whitespace-nowrap"
+                        >
+                          {dec.costPln}P · {dec.costDp}D
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Reform Historic Empires */}
+            {onReformEmpire && (
+              <div className="rounded-lg border border-rose-500/30 bg-rose-950/20 p-2.5 space-y-1.5">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-rose-300 flex items-center gap-1.5">
+                  <Crown size={12} /> Reform Historic Empires
+                </div>
+                {REFORMABLE_EMPIRES.map((emp) => {
+                  const active = player.reformedEmpireId === emp.id;
+                  const ownedCount = Object.values(state.provinces).filter((p) => p.ownerId === player.id).length;
+                  const provsOk = ownedCount >= emp.requiredProvincesOwned;
+                  return (
+                    <div key={emp.id} className="flex items-center justify-between gap-2 py-1 border-b border-slate-800/60 last:border-0 text-[10.5px]">
+                      <div className="min-w-0">
+                        <div className="font-bold text-white truncate">{emp.name[lang]}</div>
+                        <div className="text-[9.5px] text-amber-200">
+                          {emp.bonusText[lang]} ({ownedCount}/{emp.requiredProvincesOwned} prov.)
+                        </div>
+                      </div>
+                      {active ? (
+                        <span className="text-[10px] font-bold text-amber-400 shrink-0">PROCLAIMED</span>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={!provsOk || player.treasury < emp.costPln || player.diplomacyPoints < emp.costDp}
+                          onClick={() => onReformEmpire(emp.id)}
+                          className="px-2 py-1 rounded bg-rose-500 hover:bg-rose-400 disabled:opacity-40 text-white text-[10px] font-bold cursor-pointer shrink-0 whitespace-nowrap"
+                        >
+                          {emp.costPln}P · {emp.costDp}D
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
             <div className="space-y-2">
               <div className="text-[10px] font-bold uppercase tracking-wider text-sky-300 flex items-center gap-1.5">
                 <Briefcase size={12} /> Cabinet of Ministers

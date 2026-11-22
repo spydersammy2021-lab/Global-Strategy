@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AccountModal } from './components/AccountModal';
 import { BottomProvinceBar } from './components/BottomProvinceBar';
 import { CityReconModal } from './components/CityReconModal';
+import { CustomNationModal } from './components/CustomNationModal';
 import { GameOverModal } from './components/GameOverModal';
 import { GeopoliticsCouncilModal } from './components/GeopoliticsCouncilModal';
 import { LeaderboardChronicleModal, type ModalTab } from './components/LeaderboardChronicleModal';
@@ -10,7 +11,9 @@ import { type LeftDrawerId, LeftToolbar } from './components/LeftToolbar';
 import { MainMenu } from './components/MainMenu';
 import { MobileCommandHud } from './components/MobileCommandHud';
 import { NotificationStack } from './components/NotificationStack';
+import { PeaceConferenceModal } from './components/PeaceConferenceModal';
 import { RandomEventModal } from './components/RandomEventModal';
+import { RightSpaceDock } from './components/RightSpaceDock';
 import { SaveLoadModal } from './components/SaveLoadModal';
 import { ScenarioEditorModal } from './components/ScenarioEditorModal';
 import { SettingsModal } from './components/SettingsModal';
@@ -21,7 +24,9 @@ import { TechTreeModal } from './components/TechTreeModal';
 import { TopHudBar } from './components/TopHudBar';
 import { TreasuryModal } from './components/TreasuryModal';
 import { TutorialModal } from './components/TutorialModal';
+import { WarDeclarationModal } from './components/WarDeclarationModal';
 import { WorldMapCanvas } from './components/WorldMapCanvas';
+import { XpPopupLayer } from './components/XpPopupLayer';
 import { getCityById } from './data/cities';
 import {
   createGuestAccount,
@@ -35,6 +40,7 @@ import { computeCountrySummaries, splitUnitsByRatio } from './game/combat';
 import {
   type BlackOpType,
   type DiplomacyAction,
+  adjustRelations,
   advanceDay,
   appointMinister,
   assimilateProvince,
@@ -44,35 +50,52 @@ import {
   changeIdeology,
   clearTechQueue,
   constructBuilding,
+  continueEternalEmpire,
   createNewGame,
   deploySpy,
   designCustomUnit,
+  developProvince,
   executeBlackOp,
   fundSpaceOceanColony,
   issueArmyOrder,
   launchSpySatellite,
   launchStrategicStrike,
   planTechTreePath,
+  plunderProvince,
   proposeDiplomacy,
+  proposeExtendedDiplomacy,
   reconstructProvinceCity,
+  recruitGeneral,
   recruitUnits,
+  reformHistoricEmpire,
   repayLoan,
   researchTechNode,
+  resolvePeaceConference,
   resolveRandomEvent,
+  resolveWarPrompt,
+  resurrectAncientFaith,
+  sendMissionaries,
   setTaxRate,
+  setVassalTribute,
   takeBankLoan,
   toggleAutoPilot,
+  togglePeacefulStart,
   toggleStraitBlockade,
   tradeMarketResource,
   triggerAutoPilotAirliftNow,
+  unlockLegacyPerk,
+  updateBudgetSliders,
   voteWorldCouncil,
 } from './game/engine';
 import { type FpsCap, detectHardwareProfile, resolveEffectiveTier } from './game/performance';
 import type {
+  AiAggressiveness,
   BattleEvent,
   BlocksAccount,
+  BudgetSliders,
   BuildingType,
   CommodityId,
+  CustomNationConfig,
   CustomScenarioConfig,
   CustomUnitCategory,
   DifficultyId,
@@ -82,8 +105,11 @@ import type {
   Language,
   MapOverlayMode,
   MegaprojectId,
+  MilitaryGeneral,
   MinisterRole,
+  PeaceTreatyDraft,
   PerformanceMode,
+  ReligionId,
   ScenarioId,
   SimSpeed,
   StraitBlockadeId,
@@ -134,9 +160,15 @@ export default function App() {
   const [uiMode, setUiMode] = useState<UiMode>(() => {
     try {
       const saved = localStorage.getItem(UI_MODE_KEY) as UiMode | null;
-      return saved === 'very_easy' || saved === 'easy' || saved === 'hard' ? saved : 'easy';
+      return saved === 'very_easy' ||
+        saved === 'easy' ||
+        saved === 'hard' ||
+        saved === 'extended' ||
+        saved === 'ultra_realistic'
+        ? saved
+        : 'extended';
     } catch {
-      return 'easy';
+      return 'extended';
     }
   });
   const [advisorEnabled, setAdvisorEnabled] = useState<boolean>(() => {
@@ -180,6 +212,9 @@ export default function App() {
   const [gameMode, setGameMode] = useState<GameMode>('player');
   const [selectedScenario, setSelectedScenario] = useState<ScenarioId>('2026');
   const [selectedDifficulty, setSelectedDifficulty] = useState<DifficultyId>('normal');
+  const [aiAggressiveness, setAiAggressiveness] = useState<AiAggressiveness>('normal');
+  const [peacefulStartEnabled, setPeacefulStartEnabled] = useState<boolean>(true);
+  const [customNation, setCustomNation] = useState<CustomNationConfig | null>(null);
   const [selectedCountryId, setSelectedCountryId] = useState<string>('616');
 
   const [gameState, setGameState] = useState<GameState | null>(() =>
@@ -210,6 +245,8 @@ export default function App() {
   const [spaceOceanOpen, setSpaceOceanOpen] = useState(false);
   const [councilOpen, setCouncilOpen] = useState(false);
   const [scenarioEditorOpen, setScenarioEditorOpen] = useState(false);
+  const [customNationOpen, setCustomNationOpen] = useState(false);
+  const [peaceEnemyId, setPeaceEnemyId] = useState<string | null>(null);
 
   const anyBlockingModalOpen =
     accountOpen ||
@@ -222,8 +259,11 @@ export default function App() {
     spaceOceanOpen ||
     councilOpen ||
     scenarioEditorOpen ||
+    customNationOpen ||
+    Boolean(peaceEnemyId) ||
     selectedCityId !== null ||
-    Boolean(gameState?.pendingEvent);
+    Boolean(gameState?.pendingEvent) ||
+    Boolean(gameState?.pendingWarPrompt);
 
   useEffect(() => {
     if (screen === 'playing' && gameState) {
@@ -298,11 +338,25 @@ export default function App() {
 
   const handleChangeUiMode = (nextMode: UiMode) => {
     setUiMode(nextMode);
+    setGameState((prev) => (prev ? { ...prev, uiMode: nextMode } : prev));
     try {
       localStorage.setItem(UI_MODE_KEY, nextMode);
     } catch {
       // ignore
     }
+  };
+
+  const handleTogglePeacefulStart = () => {
+    setPeacefulStartEnabled((prev) => {
+      const next = !prev;
+      setGameState((gs) => (gs ? togglePeacefulStart(gs, next) : gs));
+      return next;
+    });
+  };
+
+  const handleChangeAiAggressiveness = (next: AiAggressiveness) => {
+    setAiAggressiveness(next);
+    setGameState((prev) => (prev ? { ...prev, aiAggressiveness: next } : prev));
   };
 
   const startCampaign = useCallback(
@@ -314,21 +368,29 @@ export default function App() {
       customScenario?: CustomScenarioConfig,
     ) => {
       soundEngine.playClick();
-      const fresh = createNewGame(scenarioId, countryId, difficulty, lang, mode, customScenario);
+      const fresh = createNewGame(scenarioId, countryId, difficulty, lang, mode, customScenario, {
+        aiAggressiveness,
+        uiMode,
+        peacefulStartEnabled,
+        customNation,
+      });
       const isSpectator = mode === 'bot_spectator';
+      const effectiveId = !isSpectator && customNation ? customNation.id : countryId;
       const cap = isSpectator
         ? null
-        : Object.values(fresh.provinces).find((p) => p.ownerId === countryId && p.isCapital) ??
-          Object.values(fresh.provinces).find((p) => p.ownerId === countryId) ??
+        : Object.values(fresh.provinces).find((p) => p.ownerId === effectiveId && p.isCapital) ??
+          Object.values(fresh.provinces).find((p) => p.ownerId === effectiveId) ??
           null;
       setGameState(fresh);
       setSelectedProvinceId(cap?.id ?? null);
-      setInspectedCountryId(isSpectator ? '616' : countryId === '616' ? '276' : '616');
+      setInspectedCountryId(isSpectator ? '616' : effectiveId === '616' ? '276' : '616');
       setActiveDrawer(null);
       setMarchMode(false);
       setMarchTargetId(null);
       setActiveBattles([]);
       setScenarioEditorOpen(false);
+      setCustomNationOpen(false);
+      setPeaceEnemyId(null);
       setScreen('playing');
 
       try {
@@ -340,7 +402,18 @@ export default function App() {
         // ignore
       }
     },
-    [selectedScenario, selectedCountryId, selectedDifficulty, gameMode, lang, isAutostart],
+    [
+      selectedScenario,
+      selectedCountryId,
+      selectedDifficulty,
+      gameMode,
+      lang,
+      isAutostart,
+      aiAggressiveness,
+      uiMode,
+      peacefulStartEnabled,
+      customNation,
+    ],
   );
 
   // Enter shortcut in Main Menu
@@ -352,7 +425,8 @@ export default function App() {
       saveLoadOpen ||
       tutorialOpen ||
       leaderboardOpen ||
-      scenarioEditorOpen
+      scenarioEditorOpen ||
+      customNationOpen
     ) {
       return;
     }
@@ -372,6 +446,7 @@ export default function App() {
     tutorialOpen,
     leaderboardOpen,
     scenarioEditorOpen,
+    customNationOpen,
     startCampaign,
   ]);
 
@@ -380,6 +455,14 @@ export default function App() {
     if (screen !== 'playing' || !gameState) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !e.repeat) {
+        if (peaceEnemyId) {
+          setPeaceEnemyId(null);
+          return;
+        }
+        if (customNationOpen) {
+          setCustomNationOpen(false);
+          return;
+        }
         if (selectedCityId) {
           setSelectedCityId(null);
           return;
@@ -446,6 +529,8 @@ export default function App() {
     screen,
     gameState,
     anyBlockingModalOpen,
+    peaceEnemyId,
+    customNationOpen,
     selectedCityId,
     techTreeOpen,
     spaceOceanOpen,
@@ -530,9 +615,12 @@ export default function App() {
             recordHallOfFameEntry({
               accountId: updatedAcc.id,
               nickname: updatedAcc.nickname,
+              avatarId: updatedAcc.avatarId,
+              countryId: myCountry.id,
               countryName: myCountry.displayName,
+              difficulty: next.difficulty,
               scenarioId: next.scenarioId,
-              turn: next.turn,
+              turns: next.turn,
               areaKm2: mySum.areaKm2,
               powerScore: mySum.powerScore,
             });
@@ -853,9 +941,13 @@ export default function App() {
     setGameState(res.state);
   };
 
-  const handleBlackOp = (targetId: string, op: BlackOpType) => {
+  const handleBlackOp = (
+    targetId: string,
+    op: BlackOpType,
+    options?: { targetProvinceId?: string; customSlogan?: string },
+  ) => {
     if (!gameState) return;
-    const res = executeBlackOp(gameState, targetId, op, lang);
+    const res = executeBlackOp(gameState, targetId, op, lang, options);
     if (res.error) {
       pushToastError(res.error);
       return;
@@ -1006,6 +1098,154 @@ export default function App() {
     setGameState(resolveRandomEvent(gameState, choiceId));
   };
 
+  // V4.0 Action Handlers
+  const handleContinueEternalEmpire = () => {
+    if (!gameState) return;
+    soundEngine.playClick();
+    setGameState(continueEternalEmpire(gameState));
+  };
+
+  const handleResolveWarPrompt = (acceptWar: boolean) => {
+    if (!gameState) return;
+    const res = resolveWarPrompt(gameState, acceptWar, lang);
+    if (res.error) {
+      pushToastError(res.error);
+      return;
+    }
+    if (acceptWar) soundEngine.playWarDeclaration();
+    else soundEngine.playClick();
+    setGameState(res.state);
+  };
+
+  const handleAdjustRelations = (targetId: string, direction: 'improve' | 'insult') => {
+    if (!gameState) return;
+    const res = adjustRelations(gameState, targetId, direction, lang);
+    if (res.error) {
+      pushToastError(res.error);
+      return;
+    }
+    soundEngine.playClick();
+    setGameState(res.state);
+  };
+
+  const handleExtendedDiplomacy = (
+    targetId: string,
+    action: 'guarantee' | 'sanctions' | 'lend_lease',
+  ) => {
+    if (!gameState) return;
+    const res = proposeExtendedDiplomacy(gameState, targetId, action, lang);
+    if (res.error) {
+      pushToastError(res.error);
+      return;
+    }
+    soundEngine.playBuildOrRecruit();
+    setGameState(res.state);
+  };
+
+  const handleSetVassalTribute = (vassalId: string, pct: number) => {
+    if (!gameState) return;
+    const res = setVassalTribute(gameState, vassalId, pct);
+    if (res.error) {
+      pushToastError(res.error);
+      return;
+    }
+    setGameState(res.state);
+  };
+
+  const handleSignPeaceTreaty = (draft: PeaceTreatyDraft) => {
+    if (!gameState) return;
+    const res = resolvePeaceConference(gameState, draft, lang);
+    if (res.error) {
+      pushToastError(res.error);
+      return;
+    }
+    soundEngine.playBuildOrRecruit();
+    setPeaceEnemyId(null);
+    setGameState(res.state);
+  };
+
+  const handleUpdateBudgetSliders = (sliders: Partial<BudgetSliders>) => {
+    if (!gameState) return;
+    setGameState(updateBudgetSliders(gameState, sliders));
+  };
+
+  const handleDevelopProvince = (provId: string) => {
+    if (!gameState) return;
+    const res = developProvince(gameState, provId, lang);
+    if (res.error) {
+      pushToastError(res.error);
+      return;
+    }
+    soundEngine.playBuildOrRecruit();
+    setGameState(res.state);
+  };
+
+  const handlePlunderProvince = (provId: string) => {
+    if (!gameState) return;
+    const res = plunderProvince(gameState, provId, lang);
+    if (res.error) {
+      pushToastError(res.error);
+      return;
+    }
+    soundEngine.playCannonSalvo();
+    setGameState(res.state);
+  };
+
+  const handleSendMissionaries = (provId: string) => {
+    if (!gameState) return;
+    const res = sendMissionaries(gameState, provId, lang);
+    if (res.error) {
+      pushToastError(res.error);
+      return;
+    }
+    soundEngine.playBuildOrRecruit();
+    setGameState(res.state);
+  };
+
+  const handleResurrectFaith = (religionId: ReligionId) => {
+    if (!gameState) return;
+    const res = resurrectAncientFaith(gameState, religionId, lang);
+    if (res.error) {
+      pushToastError(res.error);
+      return;
+    }
+    soundEngine.playBuildOrRecruit();
+    setGameState(res.state);
+  };
+
+  const handleReformEmpire = (empireId: string) => {
+    if (!gameState) return;
+    const res = reformHistoricEmpire(gameState, empireId, lang);
+    if (res.error) {
+      pushToastError(res.error);
+      return;
+    }
+    soundEngine.playBuildOrRecruit();
+    setGameState(res.state);
+  };
+
+  const handleRecruitGeneral = (specialty: MilitaryGeneral['specialty']) => {
+    if (!gameState) return;
+    const res = recruitGeneral(gameState, specialty, lang);
+    if (res.error) {
+      pushToastError(res.error);
+      return;
+    }
+    soundEngine.playBuildOrRecruit();
+    setGameState(res.state);
+  };
+
+  const handleUnlockLegacyPerk = (perkId: string) => {
+    if (!gameState) return;
+    const res = unlockLegacyPerk(gameState, perkId, lang);
+    if (res.error) {
+      pushToastError(res.error);
+      return;
+    }
+    soundEngine.playBuildOrRecruit();
+    setGameState(res.state);
+  };
+
   const handleDismissNotification = useCallback((id: string) => {
     setGameState((prev) =>
       prev ? { ...prev, notifications: prev.notifications.filter((n) => n.id !== id) } : prev,
@@ -1056,10 +1296,16 @@ export default function App() {
           onSelectScenario={setSelectedScenario}
           selectedDifficulty={selectedDifficulty}
           onSelectDifficulty={setSelectedDifficulty}
+          aiAggressiveness={aiAggressiveness}
+          onSelectAiAggressiveness={handleChangeAiAggressiveness}
           selectedCountryId={selectedCountryId}
           onSelectCountryId={setSelectedCountryId}
           uiMode={uiMode}
           onSelectUiMode={handleChangeUiMode}
+          peacefulStartEnabled={peacefulStartEnabled}
+          onTogglePeacefulStart={handleTogglePeacefulStart}
+          customNation={customNation}
+          onOpenCustomNation={() => setCustomNationOpen(true)}
           onStartCampaign={() => startCampaign()}
           onOpenAccount={() => setAccountOpen(true)}
           onOpenLoad={() => setSaveLoadOpen(true)}
@@ -1074,6 +1320,7 @@ export default function App() {
           lang={lang}
           effectiveTier={effectiveTier}
           fpsCap={fpsCap}
+          bgPaused={anyBlockingModalOpen}
         />
       )}
 
@@ -1129,8 +1376,10 @@ export default function App() {
             onRecruit={handleRecruit}
             onBuild={handleBuild}
             onAssimilate={handleAssimilate}
+            onDevelopProvince={handleDevelopProvince}
             onIssueOrder={handleIssueOrder}
             onDiplomacy={handleDiplomacy}
+            onOpenPeaceConference={(enemyId) => setPeaceEnemyId(enemyId)}
             onOpenTechTree={() => setTechTreeOpen(true)}
             onOpenSpaceOcean={() => setSpaceOceanOpen(true)}
             onOpenCouncil={() => setCouncilOpen(true)}
@@ -1170,13 +1419,22 @@ export default function App() {
               modalOpen={anyBlockingModalOpen}
             />
 
+            {/* Floating +XP Popups */}
+            <XpPopupLayer popups={gameState.xpPopups ?? []} />
+
+            {/* Opposite RIGHT-Side Space / Mars Dock */}
+            <RightSpaceDock
+              state={gameState}
+              onOpenSpaceOcean={() => setSpaceOceanOpen(true)}
+              t={t}
+            />
+
             {/* Left Vertical AoH3 Command Rail */}
             <LeftToolbar
               activeDrawer={activeDrawer}
               isSpectator={gameState.gameMode === 'bot_spectator'}
               onToggleDrawer={handleToggleDrawer}
               onOpenTechTree={() => setTechTreeOpen(true)}
-              onOpenSpaceOcean={() => setSpaceOceanOpen(true)}
               onOpenCouncilModal={() => setCouncilOpen(true)}
               t={t}
             />
@@ -1190,6 +1448,10 @@ export default function App() {
               inspectedCountryId={inspectedCountryId}
               onSelectCountry={handleSelectCountryFromPanel}
               onDiplomacy={handleDiplomacy}
+              onAdjustRelations={handleAdjustRelations}
+              onExtendedDiplomacy={handleExtendedDiplomacy}
+              onSetVassalTribute={handleSetVassalTribute}
+              onOpenPeaceConference={(enemyId) => setPeaceEnemyId(enemyId)}
               onDeploySpy={handleDeploySpy}
               onLaunchSpySatellite={handleLaunchSpySatellite}
               onBlackOp={handleBlackOp}
@@ -1201,6 +1463,7 @@ export default function App() {
                 setLeaderboardOpen(true);
               }}
               onSetTaxRate={handleSetTaxRate}
+              onUpdateBudgetSliders={handleUpdateBudgetSliders}
               onTakeLoan={handleTakeLoan}
               onRepayLoan={handleRepayLoan}
               onTradeMarket={handleTradeMarket}
@@ -1210,6 +1473,10 @@ export default function App() {
               onVoteCouncil={handleVoteCouncil}
               onCancelOrder={handleCancelOrder}
               onBuildWarhead={handleBuildWarhead}
+              onRecruitGeneral={handleRecruitGeneral}
+              onResurrectFaith={handleResurrectFaith}
+              onReformEmpire={handleReformEmpire}
+              onUnlockLegacyPerk={handleUnlockLegacyPerk}
               t={t}
               lang={lang}
             />
@@ -1230,6 +1497,9 @@ export default function App() {
                 onRecruit={handleRecruit}
                 onAssimilate={handleAssimilate}
                 onReconstructCity={handleReconstructCity}
+                onDevelop={handleDevelopProvince}
+                onPlunder={handlePlunderProvince}
+                onSendMissionaries={handleSendMissionaries}
                 onIssueOrder={handleIssueOrder}
                 onCancelOrder={handleCancelOrder}
                 t={t}
@@ -1317,6 +1587,7 @@ export default function App() {
             t={t}
             lang={lang}
             effectiveTier={effectiveTier}
+            onContinueEternal={handleContinueEternalEmpire}
             onPlayAgain={() =>
               startCampaign(
                 gameState.scenarioId,
@@ -1326,6 +1597,22 @@ export default function App() {
               )
             }
             onBackToMenu={() => setScreen('menu')}
+          />
+
+          <WarDeclarationModal
+            state={gameState}
+            onResolve={handleResolveWarPrompt}
+            effectiveTier={effectiveTier}
+          />
+
+          <PeaceConferenceModal
+            isOpen={Boolean(peaceEnemyId)}
+            enemyId={peaceEnemyId}
+            state={gameState}
+            onClose={() => setPeaceEnemyId(null)}
+            onSignTreaty={handleSignPeaceTreaty}
+            t={t}
+            effectiveTier={effectiveTier}
           />
 
           <CityReconModal
@@ -1339,6 +1626,19 @@ export default function App() {
       )}
 
       {/* Shared Modals */}
+      <CustomNationModal
+        isOpen={customNationOpen}
+        onClose={() => setCustomNationOpen(false)}
+        initialValue={customNation}
+        onSaveNation={(cfg) => {
+          setCustomNation(cfg);
+          setCustomNationOpen(false);
+        }}
+        t={t}
+        lang={lang}
+        effectiveTier={effectiveTier}
+      />
+
       <ScenarioEditorModal
         isOpen={scenarioEditorOpen}
         onClose={() => setScenarioEditorOpen(false)}
@@ -1389,6 +1689,10 @@ export default function App() {
         onToggleVoice={handleToggleVoice}
         uiMode={uiMode}
         onChangeUiMode={handleChangeUiMode}
+        peacefulStartEnabled={gameState ? gameState.peacefulStartEnabled : peacefulStartEnabled}
+        onTogglePeacefulStart={handleTogglePeacefulStart}
+        aiAggressiveness={gameState ? gameState.aiAggressiveness : aiAggressiveness}
+        onChangeAiAggressiveness={handleChangeAiAggressiveness}
         t={t}
       />
 

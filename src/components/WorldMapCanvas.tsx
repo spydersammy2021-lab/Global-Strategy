@@ -1,6 +1,11 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { Crosshair, Maximize2, Minus, Plus } from 'lucide-react';
 import { MAJOR_CITIES } from '../data/cities';
+import {
+  CULTURE_LABELS,
+  RELIGION_LABELS,
+  RESOURCE_LABELS,
+} from '../data/leadersAndDemographics';
 import { STRATEGIC_STRAITS } from '../data/spaceSectors';
 import { getExactCountryArmy, getTotalUnits } from '../game/combat';
 import { WORLD_HEIGHT, WORLD_WIDTH, buildWorldMapData, projectLonLat } from '../game/mapGen';
@@ -448,7 +453,7 @@ export function WorldMapCanvas({
 
     let frameCount = 0;
     let lastFpsTick = performance.now();
-    let lastAnimDraw = 0;
+    let lastAnimDrawEnd = 0;
     let lastDrawDuration = 0;
     let lowFpsStrike = 0;
 
@@ -502,28 +507,28 @@ export function WorldMapCanvas({
         overlay === 'logistics' ||
         !st.simPaused;
       const hasActiveWars =
+        !st.simPaused &&
         activeTier !== 'light' &&
         Object.values(st.countries).some((c) => !c.eliminated && c.atWarWith.length > 0);
-      const hasWaterAlerts = st.waterAlerts.length > 0;
+      const hasWaterAlerts = !st.simPaused && st.waterAlerts.length > 0;
       const capMs = getFpsCapIntervalMs(fpsCapRef.current);
-      // On GPU/fast hardware drawMs <= 6ms -> effectiveCap = capMs (0 = uncapped native Hz).
-      // On software CPU rasterizers where a single draw takes > 6ms, yield briefly so UI & compositor stay responsive.
+      // On GPU/fast hardware drawMs <= 8ms -> effectiveCap = capMs (0 = uncapped native Hz).
+      // On software CPU rasterizers where a single draw takes > 8ms, yield cleanly AFTER draw end so UI & compositor stay responsive.
       const cpuYieldMs =
-        capMs === 0 && lastDrawDuration > 6
-          ? Math.min(100, Math.max(80, lastDrawDuration * 3))
+        capMs === 0 && lastDrawDuration > 8
+          ? Math.min(200, Math.max(70, lastDrawDuration * 2.2))
           : capMs;
 
       if (!dirtyRef.current) {
         if (hasContinuousEffects) {
-          if (cpuYieldMs > 0 && now - lastAnimDraw < cpuYieldMs - 0.5) return;
+          if (cpuYieldMs > 0 && now - lastAnimDrawEnd < cpuYieldMs - 0.5) return;
         } else if (hasActiveWars || hasWaterAlerts) {
           const ambientStep = cpuYieldMs > 0 ? Math.max(120, cpuYieldMs) : 120;
-          if (now - lastAnimDraw < ambientStep) return;
+          if (now - lastAnimDrawEnd < ambientStep) return;
         } else {
           return;
         }
       }
-      lastAnimDraw = now;
       dirtyRef.current = false;
       const frameStartPerf = performance.now();
 
@@ -660,6 +665,50 @@ export function WorldMapCanvas({
         if (overlay === 'thermal') {
           ctx.fillStyle = temperatureToHex(tempC);
           ctx.globalAlpha = 0.88;
+        } else if (overlay === 'religions') {
+          ctx.fillStyle = RELIGION_LABELS[provState.religion ?? 'secular']?.color ?? '#64748B';
+          ctx.globalAlpha = 0.86;
+        } else if (overlay === 'cultures') {
+          ctx.fillStyle = CULTURE_LABELS[provState.culture ?? 'arctic_research']?.color ?? '#64748B';
+          ctx.globalAlpha = 0.86;
+        } else if (overlay === 'economy') {
+          const ecoScore = provState.economy + (provState.development ?? 1) * 0.45;
+          ctx.fillStyle =
+            ecoScore >= 10
+              ? '#FACC15'
+              : ecoScore >= 6.5
+              ? '#22C55E'
+              : ecoScore >= 4.0
+              ? '#10B981'
+              : ecoScore >= 2.2
+              ? '#0EA5E9'
+              : '#1E293B';
+          ctx.globalAlpha = 0.88;
+        } else if (overlay === 'resources') {
+          ctx.fillStyle = RESOURCE_LABELS[provState.resource ?? 'coal_steel']?.color ?? '#64748B';
+          ctx.globalAlpha = 0.86;
+        } else if (overlay === 'diplomacy') {
+          const viewer = st.countries[st.playerCountryId];
+          if (!viewer || isSpectator) {
+            ctx.fillStyle = owner?.color ?? '#64748B';
+          } else if (provState.ownerId === viewer.id) {
+            ctx.fillStyle = '#F59E0B';
+          } else if (viewer.atWarWith.includes(provState.ownerId)) {
+            ctx.fillStyle = '#EF4444';
+          } else if (viewer.allies.includes(provState.ownerId)) {
+            ctx.fillStyle = '#10B981';
+          } else if (owner?.vassalOf === viewer.id || viewer.vassalOf === provState.ownerId) {
+            ctx.fillStyle = '#A855F7';
+          } else if (
+            (viewer.nonAggressionWith[provState.ownerId] ?? 0) > 0 ||
+            (viewer.truceWith[provState.ownerId] ?? 0) > 0
+          ) {
+            ctx.fillStyle = '#38BDF8';
+          } else {
+            const rel = viewer.relations?.[provState.ownerId] ?? 0;
+            ctx.fillStyle = rel >= 25 ? '#166534' : rel <= -25 ? '#7F1D1D' : '#334155';
+          }
+          ctx.globalAlpha = 0.88;
         } else if (overlay === 'logistics') {
           ctx.fillStyle = hasRail
             ? '#B45309'
@@ -677,7 +726,10 @@ export function WorldMapCanvas({
         ctx.globalAlpha = 1;
 
         if (overlay === 'political') {
-          if (i % 2 === 1) {
+          if (geom.id.startsWith('010_')) {
+            ctx.fillStyle = 'rgba(224, 242, 254, 0.14)';
+            ctx.fill(path);
+          } else if (i % 2 === 1) {
             ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
             ctx.fill(path);
           }
@@ -1151,7 +1203,7 @@ export function WorldMapCanvas({
             }
           }
 
-          // Tiny crisp building pip strip on zoomed provinces
+          // Tiny crisp building pip strip on zoomed provinces (all 16 buildings)
           if (prov.buildings.length > 0 && cam.zoom >= 3.2) {
             const iconSz = 4.6 / baseScale;
             const totalW = prov.buildings.length * (iconSz + 1.1 / baseScale);
@@ -1161,22 +1213,34 @@ export function WorldMapCanvas({
               ctx.fillStyle =
                 b === 'factory'
                   ? '#F59E0B'
+                  : b === 'workshop'
+                  ? '#FB923C'
                   : b === 'farm'
                   ? '#22C55E'
                   : b === 'barracks'
                   ? '#EF4444'
+                  : b === 'armory'
+                  ? '#F87171'
                   : b === 'port'
                   ? '#38BDF8'
                   : b === 'university'
                   ? '#818CF8'
+                  : b === 'library'
+                  ? '#2DD4BF'
                   : b === 'railway'
                   ? '#FACC15'
                   : b === 'coastal_defense'
                   ? '#22D3EE'
+                  : b === 'airbase'
+                  ? '#7DD3FC'
+                  : b === 'nuclear_reactor'
+                  ? '#A3E635'
                   : b === 'missile_silo'
                   ? '#F43F5E'
                   : b === 'spaceport'
-                  ? '#FB923C'
+                  ? '#F97316'
+                  : b === 'castle'
+                  ? '#C084FC'
                   : '#A855F7';
               ctx.fillRect(bx, by, iconSz, iconSz);
               ctx.strokeStyle = '#050914';
@@ -1184,6 +1248,28 @@ export function WorldMapCanvas({
               ctx.strokeRect(bx, by, iconSz, iconSz);
               bx += iconSz + 1.1 / baseScale;
             }
+          }
+
+          // Dynamic Country-Aware Covert Graffiti Tags on vandalized provinces
+          if (prov.graffitiTag && cam.zoom >= 1.55) {
+            const gFont = Math.max(2.6, fontSize * 0.85);
+            ctx.save();
+            ctx.translate(cx, cy - 8.5 / baseScale);
+            ctx.rotate(-0.08);
+            ctx.font = `900 ${gFont}px "JetBrains Mono", monospace`;
+            const gText = `🎨 ${prov.graffitiTag.slogan}`;
+            const gw = ctx.measureText(gText).width + 5 / baseScale;
+            const gh = gFont * 1.3;
+            ctx.fillStyle = 'rgba(131, 24, 67, 0.88)';
+            ctx.strokeStyle = '#F472B6';
+            ctx.lineWidth = 0.9 / baseScale;
+            ctx.fillRect(-gw * 0.5, -gh * 0.5, gw, gh);
+            ctx.strokeRect(-gw * 0.5, -gh * 0.5, gw, gh);
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#FDF2F8';
+            ctx.fillText(gText, 0, 0);
+            ctx.restore();
           }
         }
       }
@@ -1506,6 +1592,8 @@ export function WorldMapCanvas({
             ? '249, 115, 22'
             : pulseItem.kind === 'comeback'
             ? '250, 204, 21'
+            : pulseItem.kind === 'graffiti'
+            ? '236, 72, 153'
             : '244, 63, 94';
 
         const r1 = (10 + age * 46) / baseScale;
@@ -1626,7 +1714,8 @@ export function WorldMapCanvas({
         }
         ctx.restore();
       }
-      lastDrawDuration = performance.now() - frameStartPerf;
+      lastAnimDrawEnd = performance.now();
+      lastDrawDuration = lastAnimDrawEnd - frameStartPerf;
     };
 
     animId = requestAnimationFrame(renderFrame);

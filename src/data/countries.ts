@@ -1,4 +1,5 @@
 import type { CountryMeta, FlagPattern } from '../game/types';
+import { AUTHENTIC_FLAGS, getAuthenticFlag } from './flags';
 
 const c = (
   id: string,
@@ -26,7 +27,7 @@ const c = (
   areaKm2,
   populationM,
   color,
-  flag,
+  flag: AUTHENTIC_FLAGS[id] ?? flag,
   startingArmy2026,
   provinceNames,
   gdpFactor,
@@ -248,6 +249,14 @@ const EXTRA_METADATA: Record<string, { pl: string; alpha2: string; areaKm2: numb
   'N. Cyprus': { pl: 'Cypr Północny', alpha2: 'CY', areaKm2: 3355, popM: 0.38, army: 5000 },
   'Somaliland': { pl: 'Somaliland', alpha2: 'SO', areaKm2: 176120, popM: 5.7, army: 12000 },
   'Kosovo': { pl: 'Kosowo', alpha2: 'XK', areaKm2: 10887, popM: 1.8, army: 4000 },
+  '744': { pl: 'Svalbard (Arktyka)', alpha2: 'SJ', areaKm2: 61022, popM: 0.003, army: 1200 },
+  '234': { pl: 'Wyspy Owcze', alpha2: 'FO', areaKm2: 1393, popM: 0.054, army: 800 },
+  '702': { pl: 'Singapur', alpha2: 'SG', areaKm2: 734, popM: 5.9, army: 51000 },
+  '010': { pl: 'Antarktyda', alpha2: 'AQ', areaKm2: 14200000, popM: 0.005, army: 3000 },
+  '010_arctowski': { pl: 'Sektor Arctowski (Antarktyda)', alpha2: 'AQ', areaKm2: 2400000, popM: 0.002, army: 2200 },
+  '010_amundsen': { pl: 'Sektor Amundsen-Scott (Biegun)', alpha2: 'AQ', areaKm2: 3900000, popM: 0.002, army: 2600 },
+  '010_vostok': { pl: 'Sektor Wostok (Antarktyda)', alpha2: 'AQ', areaKm2: 4100000, popM: 0.002, army: 2400 },
+  '010_concordia': { pl: 'Sektor Concordia (Antarktyda)', alpha2: 'AQ', areaKm2: 3800000, popM: 0.002, army: 2200 },
 };
 
 const PALETTE = [
@@ -273,12 +282,7 @@ export function getCountryMeta(rawId: string, rawEnglishName: string): CountryMe
 
   const extra = EXTRA_METADATA[rawId];
   const h = hashStr(rawId + rawEnglishName);
-  const color = PALETTE[h % PALETTE.length];
-  const flagColors: [string, string, string] = [
-    PALETTE[(h + 2) % PALETTE.length],
-    '#F8FAFC',
-    PALETTE[(h + 7) % PALETTE.length],
-  ];
+  const color = rawId.startsWith('010') ? '#38BDF8' : PALETTE[h % PALETTE.length];
 
   return {
     id: rawId,
@@ -292,9 +296,9 @@ export function getCountryMeta(rawId: string, rawEnglishName: string): CountryMe
     areaKm2: extra?.areaKm2 ?? 120000,
     populationM: extra?.popM ?? 8.0,
     color,
-    flag: { type: 'h3', colors: flagColors },
+    flag: getAuthenticFlag(rawId),
     startingArmy2026: extra?.army ?? 15000,
-    gdpFactor: 0.9,
+    gdpFactor: rawId.startsWith('010') ? 0.65 : 0.9,
   };
 }
 
@@ -332,4 +336,23 @@ export const SEA_LANE_PAIRS: Array<[string, string]> = [
   ['352', '304'], // Iceland - Greenland
   ['304', '124'], // Greenland - Canada
   ['450', '508'], // Madagascar - Mozambique
+  ['744', '578'], // Svalbard - Norway
+  ['744', '304'], // Svalbard - Greenland
+  ['744', '643'], // Svalbard - Russia
+  ['234', '826'], // Faroe Islands - UK
+  ['234', '352'], // Faroe Islands - Iceland
+  ['234', '578'], // Faroe Islands - Norway
+  ['702', '458'], // Singapore - Malaysia
+  ['702', '360'], // Singapore - Indonesia
+  ['196', '300'], // Cyprus - Greece
+  ['196', '792'], // Cyprus - Turkey
+  ['010_arctowski', '032'], // Antarctica Arctowski - Argentina
+  ['010_arctowski', '152'], // Antarctica Arctowski - Chile
+  ['010_arctowski', '010_amundsen'],
+  ['010_amundsen', '710'], // Antarctica Amundsen - South Africa
+  ['010_amundsen', '010_vostok'],
+  ['010_vostok', '036'], // Antarctica Vostok - Australia
+  ['010_vostok', '010_concordia'],
+  ['010_concordia', '554'], // Antarctica Concordia - New Zealand
+  ['010_concordia', '010_arctowski'],
 ];

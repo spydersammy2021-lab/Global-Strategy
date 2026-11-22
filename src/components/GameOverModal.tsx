@@ -40,6 +40,7 @@ export function GameOverModal({
   t,
   lang = 'en',
   effectiveTier = 'ultra',
+  onContinueEternal,
   onPlayAgain,
   onBackToMenu,
 }: {
@@ -47,6 +48,7 @@ export function GameOverModal({
   t: Translations;
   lang?: Language;
   effectiveTier?: EffectiveTier;
+  onContinueEternal?: () => void;
   onPlayAgain: () => void;
   onBackToMenu: () => void;
 }) {
@@ -256,7 +258,19 @@ export function GameOverModal({
           </div>
         )}
 
-        <div className="mt-5 grid grid-cols-2 gap-3">
+        {isVictory && onContinueEternal && (
+          <button
+            type="button"
+            data-testid="continue-eternal-empire-btn"
+            onClick={onContinueEternal}
+            className="mt-4 w-full inline-flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-500 hover:brightness-110 text-slate-950 text-xs font-extrabold tracking-wide shadow-lg cursor-pointer"
+          >
+            <Play size={14} fill="currentColor" />
+            {t.continueEternalEmpireBtn}
+          </button>
+        )}
+
+        <div className="mt-3 grid grid-cols-2 gap-3">
           <button
             type="button"
             onClick={onBackToMenu}

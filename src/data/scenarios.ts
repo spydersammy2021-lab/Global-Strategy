@@ -1,4 +1,4 @@
-import type { DifficultyId, ScenarioId, UnitType } from '../game/types';
+import type { AiAggressiveness, DifficultyId, ScenarioId, UiMode, UnitType } from '../game/types';
 
 export interface DifficultyConfig {
   id: DifficultyId;
@@ -13,45 +13,33 @@ export interface DifficultyConfig {
   antiPlayerCoalitionBias: number;
 }
 
+export const V4_DIFFICULTY_ORDER: DifficultyId[] = [
+  'very_easy_plus',
+  'very_easy',
+  'easy',
+  'normal',
+  'hard',
+  'extreme',
+  'extreme_plus',
+  'impossible',
+  'extreme_ultra_impossible',
+];
+
 export const DIFFICULTIES: Record<DifficultyId, DifficultyConfig> = {
-  world_conquest: {
-    id: 'world_conquest',
-    color: '#F59E0B',
-    playerIncomeMult: 4.0,
-    playerAttackMult: 2.5,
-    aiBudgetMult: 0.55,
-    aiDefenseMult: 0.65,
+  very_easy_plus: {
+    id: 'very_easy_plus',
+    color: '#FBBF24',
+    playerIncomeMult: 2.5,
+    playerAttackMult: 1.8,
+    aiBudgetMult: 0.6,
+    aiDefenseMult: 0.72,
     aiEconomyMult: 0.6,
-    aiWarAggrMult: 0.3,
+    aiWarAggrMult: 0.2,
     aiStartBudgetMult: 0.6,
     antiPlayerCoalitionBias: 0,
   },
-  auto_pilot: {
-    id: 'auto_pilot',
-    color: '#22D3EE',
-    playerIncomeMult: 1.45,
-    playerAttackMult: 1.25,
-    aiBudgetMult: 0.9,
-    aiDefenseMult: 0.95,
-    aiEconomyMult: 0.9,
-    aiWarAggrMult: 0.75,
-    aiStartBudgetMult: 0.9,
-    antiPlayerCoalitionBias: 0,
-  },
-  extremely_easy_plus: {
-    id: 'extremely_easy_plus',
-    color: '#FBBF24',
-    playerIncomeMult: 2.2,
-    playerAttackMult: 1.65,
-    aiBudgetMult: 0.65,
-    aiDefenseMult: 0.75,
-    aiEconomyMult: 0.65,
-    aiWarAggrMult: 0.25,
-    aiStartBudgetMult: 0.65,
-    antiPlayerCoalitionBias: 0,
-  },
-  extremely_easy: {
-    id: 'extremely_easy',
+  very_easy: {
+    id: 'very_easy',
     color: '#34D399',
     playerIncomeMult: 2.0,
     playerAttackMult: 1.5,
@@ -122,11 +110,103 @@ export const DIFFICULTIES: Record<DifficultyId, DifficultyConfig> = {
     aiStartBudgetMult: 1.8,
     antiPlayerCoalitionBias: 1.0,
   },
+  impossible: {
+    id: 'impossible',
+    color: '#DC2626',
+    playerIncomeMult: 0.55,
+    playerAttackMult: 0.72,
+    aiBudgetMult: 2.2,
+    aiDefenseMult: 1.75,
+    aiEconomyMult: 2.15,
+    aiWarAggrMult: 2.6,
+    aiStartBudgetMult: 2.1,
+    antiPlayerCoalitionBias: 1.25,
+  },
+  extreme_ultra_impossible: {
+    id: 'extreme_ultra_impossible',
+    color: '#9F1239',
+    playerIncomeMult: 0.45,
+    playerAttackMult: 0.65,
+    aiBudgetMult: 2.65,
+    aiDefenseMult: 2.0,
+    aiEconomyMult: 2.6,
+    aiWarAggrMult: 3.2,
+    aiStartBudgetMult: 2.5,
+    antiPlayerCoalitionBias: 1.65,
+  },
+  // Legacy V3.0 save-file compatibility aliases
+  world_conquest: {
+    id: 'world_conquest',
+    color: '#F59E0B',
+    playerIncomeMult: 4.0,
+    playerAttackMult: 2.5,
+    aiBudgetMult: 0.55,
+    aiDefenseMult: 0.65,
+    aiEconomyMult: 0.6,
+    aiWarAggrMult: 0.3,
+    aiStartBudgetMult: 0.6,
+    antiPlayerCoalitionBias: 0,
+  },
+  auto_pilot: {
+    id: 'auto_pilot',
+    color: '#22D3EE',
+    playerIncomeMult: 1.45,
+    playerAttackMult: 1.25,
+    aiBudgetMult: 0.9,
+    aiDefenseMult: 0.95,
+    aiEconomyMult: 0.9,
+    aiWarAggrMult: 0.75,
+    aiStartBudgetMult: 0.9,
+    antiPlayerCoalitionBias: 0,
+  },
+  extremely_easy_plus: {
+    id: 'extremely_easy_plus',
+    color: '#FBBF24',
+    playerIncomeMult: 2.2,
+    playerAttackMult: 1.65,
+    aiBudgetMult: 0.65,
+    aiDefenseMult: 0.75,
+    aiEconomyMult: 0.65,
+    aiWarAggrMult: 0.25,
+    aiStartBudgetMult: 0.65,
+    antiPlayerCoalitionBias: 0,
+  },
+  extremely_easy: {
+    id: 'extremely_easy',
+    color: '#34D399',
+    playerIncomeMult: 2.0,
+    playerAttackMult: 1.5,
+    aiBudgetMult: 0.7,
+    aiDefenseMult: 0.8,
+    aiEconomyMult: 0.7,
+    aiWarAggrMult: 0.35,
+    aiStartBudgetMult: 0.7,
+    antiPlayerCoalitionBias: 0,
+  },
 };
+
+export const AI_AGGRESSIVENESS_CONFIG: Record<
+  AiAggressiveness,
+  { id: AiAggressiveness; warFreqMult: number; attackRatioMult: number; graffitiChance: number; color: string }
+> = {
+  friendly: { id: 'friendly', warFreqMult: 0.25, attackRatioMult: 0.65, graffitiChance: 0.04, color: '#34D399' },
+  normal: { id: 'normal', warFreqMult: 1.0, attackRatioMult: 1.0, graffitiChance: 0.14, color: '#38BDF8' },
+  aggressive: { id: 'aggressive', warFreqMult: 2.1, attackRatioMult: 1.45, graffitiChance: 0.3, color: '#FB923C' },
+  hyper: { id: 'hyper', warFreqMult: 3.8, attackRatioMult: 2.1, graffitiChance: 0.55, color: '#F43F5E' },
+};
+
+export function isHardcoreGeopolitics(difficulty: DifficultyId, uiMode?: UiMode): boolean {
+  return (
+    difficulty === 'extreme' ||
+    difficulty === 'extreme_plus' ||
+    difficulty === 'impossible' ||
+    difficulty === 'extreme_ultra_impossible' ||
+    uiMode === 'ultra_realistic'
+  );
+}
 
 export function getDifficultyConfig(diff?: DifficultyId | string): DifficultyConfig {
   if (!diff) return DIFFICULTIES.normal;
-  if (diff === 'very_easy') return DIFFICULTIES.extremely_easy;
   return DIFFICULTIES[diff as DifficultyId] ?? DIFFICULTIES.normal;
 }
 

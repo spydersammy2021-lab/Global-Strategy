@@ -1,49 +1,105 @@
 export type Language = 'en' | 'pl' | 'szl' | 'csb';
 
+export type RankId = 'rekrut' | 'kapitan' | 'general' | 'marszalek';
+
+export type CommanderRankId =
+  | 'cadet'
+  | 'tactician'
+  | 'general'
+  | 'field_marshal'
+  | 'world_emperor'
+  | 'galactic_sovereign';
+
 export type GameMode = 'player' | 'bot_spectator';
 
-export type SimSpeed = 1 | 2 | 3 | 5;
-
-export type SpectatorSpeed = 'paused' | '1x' | '2x' | '3x' | '5x';
-
-export type ScenarioId = '966' | '1410' | '1619' | '1918' | '1939' | '2026' | 'sandbox';
-
-export type DifficultyId =
-  | 'world_conquest'
-  | 'auto_pilot'
-  | 'extremely_easy_plus'
-  | 'extremely_easy'
-  | 'easy'
-  | 'normal'
-  | 'hard'
-  | 'extreme'
-  | 'extreme_plus';
-
-export type UiMode = 'very_easy' | 'easy' | 'hard';
+export type UiMode = 'very_easy' | 'easy' | 'hard' | 'extended' | 'ultra_realistic';
 
 export type PerformanceMode = 'auto' | 'ultra' | 'medium' | 'light';
 
 export type EffectiveTier = 'ultra' | 'medium' | 'light';
 
+export type SimSpeed = 1 | 2 | 3 | 5;
+
+export type FpsLimit = 60 | 120 | 144 | 165 | 240 | 'unlimited';
+
+export type AiAggressiveness = 'friendly' | 'normal' | 'aggressive' | 'hyper';
+
+export type MapOverlayMode =
+  | 'political'
+  | 'thermal'
+  | 'religions'
+  | 'cultures'
+  | 'economy'
+  | 'resources'
+  | 'diplomacy'
+  | 'logistics';
+
+export type DifficultyId =
+  | 'very_easy_plus'
+  | 'very_easy'
+  | 'easy'
+  | 'normal'
+  | 'hard'
+  | 'extreme'
+  | 'extreme_plus'
+  | 'impossible'
+  | 'extreme_ultra_impossible'
+  | 'extremely_easy_plus'
+  | 'extremely_easy'
+  | 'world_conquest'
+  | 'auto_pilot';
+
+export type ScenarioId = '2026' | 'sandbox' | '1939' | '1918' | '1619' | '1410' | '966';
+
+export type IdeologyId = 'democracy' | 'republic' | 'monarchy' | 'technocracy' | 'autocracy';
+
 export type SeasonId = 'spring' | 'summer' | 'autumn' | 'winter';
 
 export type WeatherKind = 'sunny' | 'rain' | 'snow' | 'fog';
 
-export type MapOverlayMode = 'political' | 'thermal' | 'logistics';
+export type ReligionId =
+  | 'catholic'
+  | 'protestant'
+  | 'orthodox'
+  | 'sunni'
+  | 'shia'
+  | 'hindu'
+  | 'buddhist'
+  | 'east_asian'
+  | 'judaism'
+  | 'secular'
+  | 'slavic_rodzimowierstwo'
+  | 'norse_asatru'
+  | 'hellenic'
+  | 'roman_pantheon';
 
-export type StraitBlockadeId = 'baltic' | 'suez' | 'gibraltar' | 'malacca';
+export type CultureId =
+  | 'west_slavic'
+  | 'east_slavic'
+  | 'south_slavic'
+  | 'germanic'
+  | 'romance'
+  | 'anglo_celtic'
+  | 'nordic'
+  | 'baltic'
+  | 'turkic'
+  | 'arabic_semitic'
+  | 'persian'
+  | 'indic'
+  | 'sinic'
+  | 'japonic_korean'
+  | 'sub_saharan'
+  | 'latin_american'
+  | 'oceanic'
+  | 'arctic_research';
 
-export type BuildingType =
-  | 'factory'
-  | 'farm'
-  | 'barracks'
-  | 'port'
-  | 'fort'
-  | 'university'
-  | 'railway'
-  | 'coastal_defense'
-  | 'missile_silo'
-  | 'spaceport';
+export type ResourceKind =
+  | 'oil_gas'
+  | 'coal_steel'
+  | 'rare_earths'
+  | 'grain_timber'
+  | 'uranium'
+  | 'hydro_tech';
 
 export type UnitType =
   | 'infantry'
@@ -57,81 +113,40 @@ export type UnitType =
   | 'cavalry'
   | 'artillery';
 
-export type UnitBreakdown = Partial<Record<UnitType, number>>;
+export type CustomUnitCategory = UnitType;
 
-export type CustomUnitCategory = 'tanks' | 'aviation' | 'naval_fleet';
+export type BuildingType =
+  | 'factory'
+  | 'workshop'
+  | 'farm'
+  | 'barracks'
+  | 'port'
+  | 'fort'
+  | 'castle'
+  | 'university'
+  | 'library'
+  | 'railway'
+  | 'coastal_defense'
+  | 'airbase'
+  | 'armory'
+  | 'nuclear_reactor'
+  | 'missile_silo'
+  | 'spaceport';
 
-export interface CustomUnitBlueprint {
-  id: string;
-  name: string;
-  category: CustomUnitCategory;
-  armor: number; // 1..10
-  speed: number; // 1..10
-  firepower: number; // 1..10
-  createdAt: number;
-}
+export type CommodityId = 'energy' | 'steel' | 'rare_earths' | 'grain';
 
-export interface OrbitalSatellite {
-  id: string;
-  ownerCountryId: string;
-  targetCountryId: string;
-  centroid: [number, number];
-  expiresDay: number;
-}
+export type CabinetRole = 'defense' | 'finance' | 'science' | 'intelligence';
+export type MinisterRole = CabinetRole;
 
-export interface FlagPattern {
-  type: 'h2' | 'h3' | 'v3' | 'cross' | 'canton' | 'circle' | 'diagonal' | 'bicolor_star';
-  colors: [string, string, string?];
-  emblemColor?: string;
-}
+export type MegaprojectId =
+  | 'transcontinental_rail'
+  | 'orbital_defense_grid'
+  | 'fusion_core'
+  | 'deep_ocean_arcology';
 
-export interface CountryMeta {
-  id: string;
-  alpha2: string;
-  name: Record<Language, string>;
-  areaKm2: number;
-  populationM: number;
-  color: string;
-  flag: FlagPattern;
-  provinceNames?: string[];
-  isCoastal?: boolean;
-  startingArmy2026?: number;
-  gdpFactor?: number;
-}
+export type BlackOpType = 'sabotage' | 'foment_rebels' | 'steal_tech' | 'graffiti_vandalism';
 
-export interface ProvinceGeometry {
-  id: string;
-  countryOrigId: string;
-  name: string;
-  capitalCity?: string;
-  rings: Array<Array<[number, number]>>;
-  centroid: [number, number];
-  areaShare: number;
-  popShare?: number;
-  explicitAreaKm2?: number;
-  isCoastal: boolean;
-}
-
-export interface ProvinceState {
-  id: string;
-  name: string;
-  capitalCity?: string;
-  ownerId: string;
-  originalCountryId: string;
-  areaKm2: number;
-  population: number;
-  economy: number;
-  buildings: BuildingType[];
-  units: UnitBreakdown;
-  neighbors: string[];
-  seaNeighbors: string[];
-  centroid: [number, number];
-  isCapital: boolean;
-  assimilated: boolean;
-  weather: WeatherKind;
-  temperatureC: number;
-  nuclearDevastation?: number; // 0..100
-}
+export type StraitBlockadeId = 'baltic' | 'gibraltar' | 'suez' | 'malacca';
 
 export type TechBranch = 'military' | 'economy' | 'logistics';
 
@@ -152,39 +167,192 @@ export type TechNodeId =
   | 'log_lunar_mars'
   | 'log_europa_ocean';
 
-export interface TechLevels {
-  military: number;
+export type FlagEmblemKind =
+  | 'none'
+  | 'eagle_crown'
+  | 'montenegro_eagle'
+  | 'cyprus_island'
+  | 'albania_eagle'
+  | 'serbia_eagle'
+  | 'croatia_check'
+  | 'bosnia_triangle'
+  | 'kosovo_map'
+  | 'slovenia_triglav'
+  | 'slovakia_cross'
+  | 'czech_wedge'
+  | 'crescent_star'
+  | 'crescent_star_left'
+  | 'star_center'
+  | 'star_canton'
+  | 'usa_stars'
+  | 'union_jack'
+  | 'maple'
+  | 'sun_disc'
+  | 'taegeuk'
+  | 'taiwan_canton'
+  | 'israel_star'
+  | 'cedar'
+  | 'chakra'
+  | 'brazil_globe'
+  | 'argentina_sun'
+  | 'uruguay_sun'
+  | 'mexico_eagle'
+  | 'spain_crest'
+  | 'portugal_crest'
+  | 'swiss_cross'
+  | 'nordic_cross'
+  | 'greek_cross'
+  | 'kazakh_sun'
+  | 'kyrgyz_sun'
+  | 'sri_lanka_lion'
+  | 'cambodia_angkor'
+  | 'bhutan_dragon'
+  | 'saudi_sword'
+  | 'south_africa_y'
+  | 'kenya_shield'
+  | 'ukraine_trident'
+  | 'antarctica_compass';
+
+export interface FlagPattern {
+  layout?:
+    | 'bicolor_v'
+    | 'bicolor_h'
+    | 'tricolor_v'
+    | 'tricolor_h'
+    | 'nordic'
+    | 'cross'
+    | 'triangle_left'
+    | 'stripes'
+    | 'solid'
+    | 'diagonal';
+  type?: 'h2' | 'h3' | 'v3' | 'cross' | 'canton' | 'circle' | 'diagonal' | 'bicolor_star';
+  colors: string[];
+  emblem?: string;
+  emblemColor?: string;
+  emblemKind?: FlagEmblemKind;
+  borderHex?: string;
+  customDataUrl?: string;
+}
+
+export interface CountryMeta {
+  id: string;
+  alpha2: string;
+  name: Record<Language, string>;
+  areaKm2: number;
+  populationM: number;
+  color: string;
+  flag: FlagPattern;
+  startingArmy2026: number;
+  provinceNames?: string[];
+  gdpFactor: number;
+}
+
+export interface CustomNationConfig {
+  id: string;
+  name: string;
+  capitalName: string;
+  ideology: IdeologyId;
+  colorHex: string;
+  flag: FlagPattern;
+  provinceIds: string[];
+  religion: ReligionId;
+  culture: CultureId;
+}
+
+export type UnitBreakdown = Partial<Record<UnitType, number>>;
+
+export interface UnitSpec {
+  id: UnitType;
+  costPln: number;
+  attack: number;
+  defense: number;
+  minEraScenario?: ScenarioId;
+}
+
+export interface BudgetSliders {
+  taxRate: number; // 5..40
+  goodsSpending: number; // 0..30
+  investmentsSpending: number; // 0..30
+  researchSpending: number; // 0..30
+  militarySpending: number; // 50..150 %
+}
+
+export interface MilitaryGeneral {
+  id: string;
+  name: string;
+  countryId: string;
+  level: number;
+  xp: number;
+  specialty: 'infantry' | 'armor' | 'artillery' | 'logistics' | 'siege';
+  attackBonus: number;
+  defenseBonus: number;
+  speedBonus: number;
+}
+
+export interface ProvinceGeometry {
+  id: string;
+  countryOrigId: string;
+  name: string;
+  capitalCity?: string;
+  rings: Array<Array<[number, number]>>;
+  centroid: [number, number];
+  areaShare: number;
+  popShare?: number;
+  explicitAreaKm2?: number;
+  isCoastal: boolean;
+}
+
+export interface ProvinceState {
+  id: string;
+  countryOrigId?: string;
+  originalCountryId: string;
+  name: string;
+  capitalCity?: string;
+  isCapital: boolean;
+  ownerId: string;
+  population: number;
   economy: number;
-  logistics: number;
+  development: number;
+  happiness: number;
+  assimilationProgress: number;
+  religion: ReligionId;
+  religionAdherence: number; // 0..100
+  culture: CultureId;
+  resource: ResourceKind;
+  areaKm2: number;
+  assimilated: boolean;
+  weather: WeatherKind;
+  temperatureC: number;
+  buildings: BuildingType[];
+  units: UnitBreakdown;
+  neighbors: string[];
+  seaNeighbors: string[];
+  centroid: [number, number];
+  nuclearDevastation?: number;
+  plunderCooldownDay?: number;
+  graffitiTag?: {
+    slogan: string;
+    attackerId: string;
+    timestamp: number;
+  } | null;
 }
 
 export interface LoanRecord {
   id: string;
+  principal?: number;
   remainingTotal: number;
   perTurnPayment: number;
   turnsLeft: number;
 }
 
-export interface BudgetBreakdown {
-  taxIncome: number;
-  factoryAndPortIncome: number;
-  tradeIncome: number;
-  vassalTributeIncome: number;
-  spaceOceanIncome: number;
-  armyUpkeep: number;
-  buildingUpkeep: number;
-  loanPayments: number;
-  vassalTributePaid: number;
-  netPerTurn: number;
+export interface MarketState {
+  prices: Record<CommodityId, number>;
+  trends: Record<CommodityId, 'up' | 'down' | 'flat'>;
 }
-
-export type IdeologyId = 'democracy' | 'republic' | 'monarchy' | 'technocracy' | 'autocracy';
-
-export type MinisterRole = 'defense' | 'finance' | 'science' | 'intelligence';
 
 export interface MinisterChoice {
   id: string;
-  role: MinisterRole;
+  role: CabinetRole;
   name: Record<Language, string>;
   bonusText: Record<Language, string>;
   attackBonus?: number;
@@ -193,53 +361,74 @@ export interface MinisterChoice {
   spyBonus?: number;
 }
 
-export type CommodityId = 'energy' | 'steel' | 'rare_earths' | 'grain';
-
-export type MegaprojectId =
-  | 'transcontinental_rail'
-  | 'orbital_defense_grid'
-  | 'fusion_core'
-  | 'deep_ocean_arcology';
+export interface CustomUnitBlueprint {
+  id: string;
+  name: string;
+  category: UnitType;
+  armor: number;
+  speed: number;
+  firepower: number;
+  createdAt?: number;
+}
 
 export interface CountryState {
   id: string;
   name: Record<Language, string>;
   displayName: string;
+  capitalName?: string;
   color: string;
+  ideology: IdeologyId;
   flag: FlagPattern;
+  isPlayer: boolean;
   treasury: number;
   manpower: number;
   maxManpower: number;
   researchPoints: number;
-  stability: number; // 0-100
-  taxRate: number; // 5-45 (%)
-  loans: LoanRecord[];
+  stability: number;
+  taxRate: number;
+  budgetSliders: BudgetSliders;
   movementPoints: number;
   maxMovementPoints: number;
   diplomacyPoints: number;
   maxDiplomacyPoints: number;
-  tech: TechLevels;
+  tech: {
+    military: number;
+    economy: number;
+    logistics: number;
+  };
   unlockedTechs: TechNodeId[];
   techQueue: TechNodeId[];
-  ideology: IdeologyId;
-  nextElectionDay: number;
-  cabinet: Record<MinisterRole, string | null>;
-  stockpiles: Record<CommodityId, number>;
-  nuclearWarheads: number;
-  orbitalShieldActive: boolean;
-  goldenAgeDaysLeft: number;
-  megaprojects: MegaprojectId[];
-  spaceColonies: string[]; // SpaceOceanNodeId[]
-  allies: string[];
+  loans: LoanRecord[];
+  spiedUntil: number;
   atWarWith: string[];
+  allies: string[];
+  truceWith: Record<string, number>;
   nonAggressionWith: Record<string, number>;
   militaryAccessWith: string[];
-  truceWith: Record<string, number>;
+  relations: Record<string, number>; // -100..+100
+  guarantees: string[];
+  sanctionedBy: string[];
+  lendLeaseTo: string[];
   vassalOf: string | null;
   vassals: string[];
-  spiedUntil: number;
-  isPlayer: boolean;
+  vassalTributePct: number;
   eliminated: boolean;
+  nextElectionDay?: number;
+  nuclearWarheads: number;
+  orbitalShieldActive: boolean;
+  spaceColonies: string[];
+  megaprojects: MegaprojectId[];
+  cabinet: Record<CabinetRole, string | null>;
+  stockpiles: Record<CommodityId, number>;
+  goldenAgeDaysLeft: number;
+  generals: MilitaryGeneral[];
+  religion: ReligionId;
+  religionAdherence: number;
+  culture: CultureId;
+  legacyPoints: number;
+  unlockedLegacyPerks: string[];
+  reformedEmpireId?: string | null;
+  resurrectedFaithId?: ReligionId | null;
 }
 
 export interface ArmyOrder {
@@ -248,12 +437,80 @@ export interface ArmyOrder {
   fromProvinceId: string;
   toProvinceId: string;
   units: UnitBreakdown;
+  progress: number;
+  startDay: number;
+  durationDays: number;
   isAttack: boolean;
   isNaval: boolean;
   isRail?: boolean;
-  startDay: number;
-  durationDays: number;
-  progress: number; // 0..1
+  isAirlift?: boolean;
+}
+
+export interface AirliftOrderVisual {
+  id: string;
+  countryId: string;
+  fromProvinceId?: string;
+  toProvinceId?: string;
+  fromCentroid: [number, number];
+  toCentroid: [number, number];
+  troops: number;
+  createdAt: number;
+}
+export type AirliftVisual = AirliftOrderVisual;
+
+export interface MapPulseEvent {
+  id: string;
+  centroid: [number, number];
+  kind: 'recruit' | 'battle' | 'airlift' | 'climate' | 'comeback' | 'nuclear' | 'graffiti';
+  color: string;
+  label?: string;
+  createdAt: number;
+}
+export type MapPulse = MapPulseEvent;
+
+export interface GraffitiMissionVisual {
+  id: string;
+  provinceId: string;
+  cityName: string;
+  attackerId: string;
+  slogan: string;
+  centroid: [number, number];
+  createdAt: number;
+}
+
+export interface XpPopupEvent {
+  id: string;
+  amount: number;
+  reason: string;
+  createdAt: number;
+}
+
+export interface PendingWarPrompt {
+  id: string;
+  attackerId: string;
+  attackerName: string;
+  totalAttackerArmy: number;
+  coalitionAllies: string[];
+  vetoDpCost: number;
+  vetoAllowed: boolean;
+  reason: string;
+}
+
+export interface PeaceTreatyDraft {
+  enemyId: string;
+  demandedProvinceIds: string[];
+  warReparations: boolean;
+  demilitarize: boolean;
+  forceVassalize: boolean;
+}
+
+export interface WaterAlert {
+  id: string;
+  regionKey: 'baltic' | 'atlantic' | 'mediterranean' | 'pacific';
+  severity: 'storm' | 'coastal_flood';
+  affectedProvinceIds: string[];
+  expiresDay: number;
+  centroid: [number, number];
 }
 
 export interface MissileStrikeVisual {
@@ -264,28 +521,7 @@ export interface MissileStrikeVisual {
   intercepted: boolean;
   createdAt: number;
 }
-
-export type MapPulseKind = 'recruit' | 'battle' | 'airlift' | 'climate' | 'nuclear' | 'comeback';
-
-export interface MapPulseEvent {
-  id: string;
-  kind: MapPulseKind;
-  centroid: [number, number];
-  color?: string;
-  createdAt: number;
-  label?: string;
-}
-
-export interface AirliftOrderVisual {
-  id: string;
-  countryId: string;
-  fromProvinceId: string;
-  toProvinceId: string;
-  fromCentroid: [number, number];
-  toCentroid: [number, number];
-  troops: number;
-  createdAt: number;
-}
+export type MissileVisual = MissileStrikeVisual;
 
 export interface BattleEvent {
   id: string;
@@ -303,28 +539,7 @@ export interface BattleEvent {
   timestamp: number;
 }
 
-export interface WaterAlert {
-  id: string;
-  regionKey: 'baltic' | 'atlantic' | 'mediterranean' | 'pacific';
-  severity: 'storm' | 'coastal_flood';
-  affectedProvinceIds: string[];
-  expiresDay: number;
-  centroid: [number, number];
-}
-
-export interface ChronicleEntry {
-  id: string;
-  turn: number;
-  day: number;
-  year: number;
-  monthIndex: number;
-  type: 'war' | 'peace' | 'conquest' | 'alliance' | 'vassal' | 'event' | 'nuclear' | 'space' | 'council';
-  title: string;
-  detail: string;
-  countryIds: string[];
-}
-
-export interface RandomEventChoice {
+export interface PendingRandomEventChoice {
   id: string;
   label: string;
   treasuryDelta?: number;
@@ -344,16 +559,9 @@ export interface PendingRandomEvent {
   isClimateEvent?: boolean;
   targetProvinceId?: string;
   targetProvinceName?: string;
-  choices: RandomEventChoice[];
+  choices: PendingRandomEventChoice[];
 }
-
-export interface GameNotification {
-  id: string;
-  type: 'war' | 'peace' | 'alliance' | 'conquest' | 'defeat' | 'aid' | 'info' | 'intel' | 'alert';
-  title: string;
-  message: string;
-  createdAt: number;
-}
+export type RandomEvent = PendingRandomEvent;
 
 export interface WorldCouncilState {
   activeResolutionId: string;
@@ -364,16 +572,19 @@ export interface WorldCouncilState {
   nextVoteDay: number;
 }
 
-export interface GlobalMarketState {
-  prices: Record<CommodityId, number>;
-  trends: Record<CommodityId, 'up' | 'down' | 'flat'>;
-}
-
-export interface TimelapseSnapshot {
+export interface TimelapseFrame {
   totalDays: number;
   year: number;
   monthIndex: number;
-  owners: Record<string, string>; // provinceId -> ownerId
+  owners: Record<string, string>;
+}
+
+export interface SpySatelliteMission {
+  id: string;
+  ownerCountryId: string;
+  targetCountryId: string;
+  expiresDay: number;
+  centroid: [number, number];
 }
 
 export interface CustomScenarioConfig {
@@ -388,23 +599,61 @@ export interface CustomScenarioConfig {
   createdAt: number;
 }
 
+export interface ChronicleEntry {
+  id: string;
+  turn: number;
+  day: number;
+  year: number;
+  monthIndex: number;
+  type: 'war' | 'peace' | 'alliance' | 'conquest' | 'vassal' | 'tech' | 'event' | 'nuclear' | 'space' | 'graffiti';
+  title: string;
+  detail: string;
+  countryIds: string[];
+}
+
+export interface GameNotification {
+  id: string;
+  type: 'war' | 'peace' | 'alliance' | 'conquest' | 'defeat' | 'aid' | 'intel' | 'info' | 'alert' | 'xp';
+  title: string;
+  message: string;
+  createdAt: number;
+}
+
+export interface BudgetBreakdown {
+  taxIncome: number;
+  factoryAndPortIncome: number;
+  tradeIncome: number;
+  vassalTributeIncome: number;
+  spaceOceanIncome: number;
+  armyUpkeep: number;
+  buildingUpkeep: number;
+  loanPayments: number;
+  vassalTributePaid: number;
+  netPerTurn: number;
+}
+
 export interface GameState {
   gameMode: GameMode;
   scenarioId: ScenarioId;
   difficulty: DifficultyId;
+  aiAggressiveness: AiAggressiveness;
+  uiMode: UiMode;
+  peacefulStartEnabled: boolean;
+  eternalEmpireMode: boolean;
   autoPilotEnabled: boolean;
   autoPilotLastAirliftAt: number;
   autoPilotNextAirliftAt: number;
   comebackTriggeredCount: number;
   lastComebackDay: number;
-  turn: number; // Monthly economy cycles completed (starts at 1)
-  totalDays: number; // Continuous real-time simulation days elapsed
-  day: number; // Day of month 1..30
-  monthIndex: number; // 0-11
+  turn: number;
+  totalDays: number;
+  day: number;
+  monthIndex: number;
   year: number;
   season: SeasonId;
   simPaused: boolean;
   simSpeed: SimSpeed;
+  globalWarmingIndex: number;
   playerCountryId: string;
   provinces: Record<string, ProvinceState>;
   countries: Record<string, CountryState>;
@@ -413,27 +662,31 @@ export interface GameState {
   recentMissiles: MissileStrikeVisual[];
   mapPulses: MapPulseEvent[];
   airliftVisuals: AirliftOrderVisual[];
+  graffitiVisuals: GraffitiMissionVisual[];
+  xpPopups: XpPopupEvent[];
+  commanderXp: number;
+  commanderLevel: number;
+  commanderRankId: CommanderRankId;
   waterAlerts: WaterAlert[];
-  nuclearWinterLevel: number; // 0..100
-  globalWarmingIndex: number; // 0..100
+  nuclearWinterLevel: number;
   customBlueprints: CustomUnitBlueprint[];
-  activeSatellites: OrbitalSatellite[];
-  blockadedStraits: Partial<Record<StraitBlockadeId, string>>; // straitId -> blockerCountryId
+  activeSatellites: SpySatelliteMission[];
+  blockadedStraits: Partial<Record<StraitBlockadeId, string>>;
   worldCouncil: WorldCouncilState;
-  globalMarket: GlobalMarketState;
-  timelapseSnapshots: TimelapseSnapshot[];
+  globalMarket: MarketState;
+  timelapseSnapshots: TimelapseFrame[];
   chronicle: ChronicleEntry[];
   pendingEvent: PendingRandomEvent | null;
+  pendingWarPrompt: PendingWarPrompt | null;
   notifications: GameNotification[];
   outcome: 'ongoing' | 'victory' | 'defeat';
   peakAreaKm2: number;
   warsWon: number;
   battlesFought: number;
+  customNation?: CustomNationConfig | null;
 }
 
 export type AuthMethod = 'password' | 'pin';
-
-export type RankId = 'rekrut' | 'kapitan' | 'general' | 'marszalek';
 
 export interface AccountStats {
   turnsPlayed: number;
@@ -454,27 +707,30 @@ export interface BlocksAccount {
   isGuest?: boolean;
 }
 
-export interface HallOfFameEntry {
-  id: string;
-  nickname: string;
-  accountId: string;
-  countryName: string;
-  scenarioId: ScenarioId;
-  turn: number;
-  areaKm2: number;
-  powerScore: number;
-  recordedAt: number;
-}
-
 export interface SaveSlot {
   id: string;
   accountId: string;
   label: string;
   scenarioId: ScenarioId;
-  playerCountryId: string;
+  countryId: string;
   turn: number;
   year: number;
   areaKm2: number;
   savedAt: number;
   state: GameState;
+}
+
+export interface HallOfFameEntry {
+  id: string;
+  accountId: string;
+  nickname: string;
+  avatarId?: string;
+  scenarioId: ScenarioId;
+  countryId?: string;
+  countryName: string;
+  difficulty?: DifficultyId;
+  powerScore: number;
+  areaKm2: number;
+  turns: number;
+  recordedAt: number;
 }

@@ -11,7 +11,20 @@ import {
   canUnlockTechNode,
   planTechResearchPath,
 } from '../data/techTree';
-import { SCENARIOS, getDifficultyConfig, getUnitSpec } from '../data/scenarios';
+import {
+  SCENARIOS,
+  getDifficultyConfig,
+  getUnitSpec,
+  isHardcoreGeopolitics,
+} from '../data/scenarios';
+import {
+  ANCIENT_FAITH_DECISIONS,
+  CIVILIZATION_LEGACY_PERKS,
+  REFORMABLE_EMPIRES,
+  generateGeneralForCountry,
+  getCountryDemographics,
+  getCountryGraffitiSlogan,
+} from '../data/leadersAndDemographics';
 import { generateAiOrdersAndActions, runAutoPilotCommand } from './ai';
 import {
   addUnits,
@@ -24,13 +37,17 @@ import {
 } from './combat';
 import { buildWorldMapData, projectLonLat } from './mapGen';
 import type {
+  AiAggressiveness,
   AirliftOrderVisual,
   ArmyOrder,
   BattleEvent,
+  BudgetSliders,
   BuildingType,
   ChronicleEntry,
+  CommanderRankId,
   CommodityId,
   CountryState,
+  CustomNationConfig,
   CustomScenarioConfig,
   CustomUnitBlueprint,
   CustomUnitCategory,
@@ -43,13 +60,17 @@ import type {
   LoanRecord,
   MapPulseEvent,
   MegaprojectId,
+  MilitaryGeneral,
   MinisterRole,
   MissileStrikeVisual,
+  PeaceTreatyDraft,
   PendingRandomEvent,
   ProvinceState,
+  ReligionId,
   ScenarioId,
   StraitBlockadeId,
   TechNodeId,
+  UiMode,
   UnitBreakdown,
   UnitType,
   WeatherKind,
@@ -65,16 +86,124 @@ import {
 
 export const BUILDING_COSTS: Record<BuildingType, number> = {
   factory: 22,
+  workshop: 14,
   farm: 18,
   barracks: 20,
   port: 24,
   fort: 26,
+  castle: 34,
   university: 28,
+  library: 16,
   railway: 20,
   coastal_defense: 25,
+  airbase: 36,
+  armory: 26,
+  nuclear_reactor: 52,
   missile_silo: 44,
   spaceport: 65,
 };
+
+export function getCommanderRankForLevel(level: number): CommanderRankId {
+  if (level >= 22) return 'galactic_sovereign';
+  if (level >= 15) return 'world_emperor';
+  if (level >= 10) return 'field_marshal';
+  if (level >= 6) return 'general';
+  if (level >= 3) return 'tactician';
+  return 'cadet';
+}
+
+export function grantCommanderXp(state: GameState, rawAmount: number, reason: string): GameState {
+  if (rawAmount <= 0 || state.gameMode === 'bot_spectator') return state;
+  const player = state.countries[state.playerCountryId];
+  const mult = player?.unlockedLegacyPerks?.includes('leg_orbital_ambition') ? 1.5 : 1.0;
+  const amount = Math.max(1, Math.round(rawAmount * mult));
+  const nextXp = (state.commanderXp ?? 0) + amount;
+  const nextLevel = Math.max(1, Math.floor(Math.sqrt(nextXp / 55)) + 1);
+  const nextRank = getCommanderRankForLevel(nextLevel);
+  const now = Date.now();
+  const popup = {
+    id: `xp_${now}_${Math.random().toString(36).slice(2, 6)}`,
+    amount,
+    reason,
+    createdAt: now,
+  };
+  return {
+    ...state,
+    commanderXp: nextXp,
+    commanderLevel: nextLevel,
+    commanderRankId: nextRank,
+    xpPopups: [popup, ...(state.xpPopups ?? [])].slice(0, 8),
+  };
+}
+
+function triggerArticle5AndBreakPacts(
+  state: GameState,
+  countries: Record<string, CountryState>,
+  aggressorId: string,
+  defenderId: string,
+  lang: Language,
+  chronicle: ChronicleEntry[],
+  notifications: GameNotification[],
+): void {
+  const agg = countries[aggressorId];
+  const def = countries[defenderId];
+  if (!agg || !def) return;
+
+  // Break all pacts and apply -25% stability penalty for treacherous aggression in hardcore geopolitics
+  if (isHardcoreGeopolitics(state.difficulty, state.uiMode)) {
+    agg.stability = Math.max(15, agg.stability - 25);
+    agg.relations = { ...agg.relations, [defenderId]: -100 };
+    def.relations = { ...def.relations, [aggressorId]: -100 };
+
+    const calledAllies: string[] = [];
+    for (const allyId of def.allies) {
+      if (allyId === aggressorId || allyId === defenderId) continue;
+      const ally = countries[allyId];
+      if (!ally || ally.eliminated) continue;
+      if (!ally.atWarWith.includes(aggressorId)) {
+        ally.atWarWith = [...ally.atWarWith, aggressorId];
+      }
+      if (!agg.atWarWith.includes(allyId)) {
+        agg.atWarWith = [...agg.atWarWith, allyId];
+      }
+      ally.allies = ally.allies.filter((id) => id !== aggressorId);
+      agg.allies = agg.allies.filter((id) => id !== allyId);
+      const nextNapAlly = { ...ally.nonAggressionWith };
+      delete nextNapAlly[aggressorId];
+      ally.nonAggressionWith = nextNapAlly;
+      const nextNapAgg = { ...agg.nonAggressionWith };
+      delete nextNapAgg[allyId];
+      agg.nonAggressionWith = nextNapAgg;
+      calledAllies.push(ally.displayName);
+    }
+
+    if (calledAllies.length > 0) {
+      const now = Date.now();
+      const msg =
+        lang === 'pl'
+          ? `Artykuł 5! Sojusznicy ${def.displayName} (${calledAllies.slice(0, 3).join(', ')}) przystąpili do wojny!`
+          : `Article 5 Collective Defense! ${def.displayName}'s allies (${calledAllies.slice(0, 3).join(', ')}) joined the war!`;
+      notifications.unshift({
+        id: `notif_art5_${now}`,
+        type: 'war',
+        title: lang === 'pl' ? 'Obrona Zbiorowa (Art. 5)' : 'Article 5 Coalition Activated',
+        message: msg,
+        createdAt: now,
+      });
+      chronicle.unshift({
+        id: `chr_art5_${state.totalDays}_${now}`,
+        turn: state.turn,
+        day: state.day,
+        year: state.year,
+        monthIndex: state.monthIndex,
+        type: 'war',
+        title: lang === 'pl' ? 'Sojusz Art. 5 Aktywowany' : 'Article 5 Collective Defense',
+        detail: msg,
+        countryIds: [aggressorId, defenderId],
+      });
+    }
+  }
+}
 
 interface EventTemplate {
   id: string;
@@ -299,6 +428,13 @@ function buildPendingEvent(
   };
 }
 
+export interface NewGameV4Options {
+  aiAggressiveness?: AiAggressiveness;
+  uiMode?: UiMode;
+  peacefulStartEnabled?: boolean;
+  customNation?: CustomNationConfig | null;
+}
+
 export function createNewGame(
   scenarioId: ScenarioId,
   playerCountryId: string,
@@ -306,6 +442,7 @@ export function createNewGame(
   langArg: Language = 'en',
   gameMode: GameMode = 'player',
   customScenario?: CustomScenarioConfig | null,
+  v4Options?: NewGameV4Options,
 ): GameState {
   const isLangArg =
     difficultyOrLang === 'pl' ||
@@ -314,7 +451,16 @@ export function createNewGame(
     difficultyOrLang === 'csb';
   const difficulty: DifficultyId = isLangArg ? 'normal' : difficultyOrLang;
   const lang: Language = isLangArg ? difficultyOrLang : langArg;
-  const effectivePlayerId = gameMode === 'bot_spectator' ? '__SPECTATOR__' : playerCountryId;
+  const customNation = gameMode === 'player' ? v4Options?.customNation ?? null : null;
+  const effectivePlayerId =
+    gameMode === 'bot_spectator'
+      ? '__SPECTATOR__'
+      : customNation
+      ? customNation.id
+      : playerCountryId;
+  const aiAggressiveness: AiAggressiveness = v4Options?.aiAggressiveness ?? 'normal';
+  const uiMode: UiMode = v4Options?.uiMode ?? 'extended';
+  const peacefulStartEnabled = v4Options?.peacefulStartEnabled ?? true;
 
   const mapData = buildWorldMapData();
   const scenario = SCENARIOS[scenarioId];
@@ -351,11 +497,13 @@ export function createNewGame(
         : rawTreasury;
     const isWorldConquestPlayer = isPlayerNation && difficulty === 'world_conquest';
     const finalStartTreasury = isWorldConquestPlayer ? Math.max(baseTreasury * 2.4, 240) : baseTreasury;
+    const demo = getCountryDemographics(id);
 
     countries[id] = {
       id,
       name: meta.name,
       displayName,
+      capitalName: meta.provinceNames?.[0] ?? meta.name[lang],
       color: meta.color,
       flag: meta.flag,
       treasury: Math.round(finalStartTreasury),
@@ -364,6 +512,13 @@ export function createNewGame(
       researchPoints: isWorldConquestPlayer ? 75 : 25,
       stability: isWorldConquestPlayer ? 100 : 92,
       taxRate: 18,
+      budgetSliders: {
+        taxRate: 18,
+        goodsSpending: 8,
+        investmentsSpending: 6,
+        researchSpending: 8,
+        militarySpending: 100,
+      },
       loans: [],
       movementPoints: isWorldConquestPlayer ? 16 : 8,
       maxMovementPoints: isWorldConquestPlayer ? 16 : 8,
@@ -386,18 +541,102 @@ export function createNewGame(
       nonAggressionWith: {},
       militaryAccessWith: [],
       truceWith: {},
+      relations: {},
+      guarantees: [],
+      sanctionedBy: [],
+      lendLeaseTo: [],
       vassalOf: null,
       vassals: [],
+      vassalTributePct: 22,
       spiedUntil: 0,
       isPlayer: gameMode === 'player' && id === effectivePlayerId,
       eliminated: absorbed,
+      generals: [generateGeneralForCountry(id, 'infantry', 1)],
+      religion: demo.religion,
+      religionAdherence: demo.adherence,
+      culture: demo.culture,
+      legacyPoints: 20,
+      unlockedLegacyPerks: [],
+      reformedEmpireId: null,
+      resurrectedFaithId: null,
     };
   }
+
+  // Inject Custom Nation entry if configured
+  if (customNation && customNation.provinceIds.length > 0) {
+    const cId = customNation.id;
+    countries[cId] = {
+      id: cId,
+      name: { en: customNation.name, pl: customNation.name, szl: customNation.name, csb: customNation.name },
+      displayName: customNation.name,
+      capitalName: customNation.capitalName,
+      color: customNation.colorHex,
+      flag: customNation.flag,
+      treasury: 95,
+      manpower: 65000,
+      maxManpower: 180000,
+      researchPoints: 35,
+      stability: 94,
+      taxRate: 18,
+      budgetSliders: {
+        taxRate: 18,
+        goodsSpending: 8,
+        investmentsSpending: 6,
+        researchSpending: 8,
+        militarySpending: 100,
+      },
+      loans: [],
+      movementPoints: 10,
+      maxMovementPoints: 10,
+      diplomacyPoints: 6,
+      maxDiplomacyPoints: 6,
+      tech: { military: 1, economy: 1, logistics: 1 },
+      unlockedTechs: [],
+      techQueue: [],
+      ideology: customNation.ideology,
+      nextElectionDay: 360,
+      cabinet: { defense: null, finance: null, science: null, intelligence: null },
+      stockpiles: { energy: 14, steel: 14, rare_earths: 6, grain: 18 },
+      nuclearWarheads: 0,
+      orbitalShieldActive: false,
+      goldenAgeDaysLeft: 0,
+      megaprojects: [],
+      spaceColonies: [],
+      allies: [],
+      atWarWith: [],
+      nonAggressionWith: {},
+      militaryAccessWith: [],
+      truceWith: {},
+      relations: {},
+      guarantees: [],
+      sanctionedBy: [],
+      lendLeaseTo: [],
+      vassalOf: null,
+      vassals: [],
+      vassalTributePct: 22,
+      spiedUntil: 0,
+      isPlayer: true,
+      eliminated: false,
+      generals: [generateGeneralForCountry(cId, 'armor', 1)],
+      religion: customNation.religion,
+      religionAdherence: 88,
+      culture: customNation.culture,
+      legacyPoints: 30,
+      unlockedLegacyPerks: [],
+      reformedEmpireId: null,
+      resurrectedFaithId: null,
+    };
+  }
+
+  const customProvSet = new Set(customNation?.provinceIds ?? []);
 
   const provsByOwner: Record<string, typeof mapData.provinces> = {};
   for (const geom of mapData.provinces) {
     const baseOwner = ownerForOrig(geom.countryOrigId);
-    const finalOwner = customScenario?.provinceOwnerOverrides?.[geom.id] ?? baseOwner;
+    const finalOwner =
+      customNation && customProvSet.has(geom.id)
+        ? customNation.id
+        : customScenario?.provinceOwnerOverrides?.[geom.id] ?? baseOwner;
     if (!provsByOwner[finalOwner]) provsByOwner[finalOwner] = [];
     provsByOwner[finalOwner].push(geom);
   }
@@ -408,7 +647,10 @@ export function createNewGame(
   for (const geom of mapData.provinces) {
     const meta = mapData.countryMetas[geom.countryOrigId];
     const baseOwner = ownerForOrig(geom.countryOrigId);
-    const ownerId = customScenario?.provinceOwnerOverrides?.[geom.id] ?? baseOwner;
+    const ownerId =
+      customNation && customProvSet.has(geom.id)
+        ? customNation.id
+        : customScenario?.provinceOwnerOverrides?.[geom.id] ?? baseOwner;
     const ownerMeta = mapData.countryMetas[ownerId] ?? meta;
     const ownerProvs = provsByOwner[ownerId] ?? [geom];
     const isCapital = ownerProvs[0]?.id === geom.id;
@@ -416,9 +658,11 @@ export function createNewGame(
     if (countries[ownerId]) countries[ownerId].eliminated = false;
 
     const baselineArmy =
-      (scenario.strengthOverrides?.[ownerId] ??
-        Math.round((ownerMeta.startingArmy2026 ?? 15000) * scenario.armyScale)) *
-      (customScenario?.armyMultipliers?.[ownerId] ?? 1);
+      customNation && ownerId === customNation.id
+        ? Math.max(45000, customNation.provinceIds.length * 16000)
+        : (scenario.strengthOverrides?.[ownerId] ??
+            Math.round((ownerMeta.startingArmy2026 ?? 15000) * scenario.armyScale)) *
+          (customScenario?.armyMultipliers?.[ownerId] ?? 1);
 
     const provWeight = isCapital ? 1.35 : 0.9;
     const totalWeight =
@@ -470,16 +714,38 @@ export function createNewGame(
     });
     provIdx++;
 
+    const demo =
+      customNation && ownerId === customNation.id
+        ? {
+            religion: customNation.religion,
+            adherence: 88,
+            culture: customNation.culture,
+            resource: getCountryDemographics(geom.countryOrigId).resource,
+          }
+        : getCountryDemographics(geom.countryOrigId);
+
+    const resolvedCapitalCity =
+      customNation && ownerId === customNation.id && isCapital
+        ? customNation.capitalName
+        : geom.capitalCity ?? (isCapital ? meta.provinceNames?.[0] ?? ownerMeta.name[lang] : undefined);
+
     provinces[geom.id] = {
       id: geom.id,
+      countryOrigId: geom.countryOrigId,
       name: geom.name,
-      capitalCity:
-        geom.capitalCity ?? (isCapital ? meta.provinceNames?.[0] ?? ownerMeta.name[lang] : undefined),
+      capitalCity: resolvedCapitalCity,
       ownerId,
       originalCountryId: geom.countryOrigId,
       areaKm2: provArea,
       population: provPop,
       economy: provEconomy,
+      development: isCapital ? 2 : 1,
+      happiness: 80,
+      assimilationProgress: 100,
+      religion: demo.religion,
+      religionAdherence: demo.adherence,
+      culture: demo.culture,
+      resource: demo.resource,
       buildings: isCapital ? ['barracks'] : [],
       units,
       neighbors: mapData.neighbors[geom.id] ?? [],
@@ -490,10 +756,11 @@ export function createNewGame(
       weather: provWeather,
       temperatureC: provTempC,
       nuclearDevastation: 0,
+      graffitiTag: null,
     };
   }
 
-  // Eliminate any country left with 0 provinces after custom scenario transfers
+  // Eliminate any country left with 0 provinces after custom scenario/nation transfers
   for (const c of Object.values(countries)) {
     if ((provsByOwner[c.id]?.length ?? 0) === 0) c.eliminated = true;
   }
@@ -508,7 +775,7 @@ export function createNewGame(
   }
 
   // Reconcile area rounding remainder on original country's first province so total km2 is exact
-  if (!customScenario) {
+  if (!customScenario && !customNation) {
     const origGroups: Record<string, ProvinceState[]> = {};
     for (const p of Object.values(provinces)) {
       if (!origGroups[p.originalCountryId]) origGroups[p.originalCountryId] = [];
@@ -530,12 +797,25 @@ export function createNewGame(
     if (countries[a] && countries[b] && !countries[a].eliminated && !countries[b].eliminated) {
       if (!countries[a].allies.includes(b)) countries[a].allies.push(b);
       if (!countries[b].allies.includes(a)) countries[b].allies.push(a);
+      countries[a].relations[b] = 75;
+      countries[b].relations[a] = 75;
     }
   }
   for (const [a, b] of warsToApply) {
+    // Respect Peaceful Start & War Acceptance toggle for non-custom scenarios involving player
+    if (
+      !customScenario &&
+      peacefulStartEnabled &&
+      gameMode === 'player' &&
+      (a === effectivePlayerId || b === effectivePlayerId)
+    ) {
+      continue;
+    }
     if (countries[a] && countries[b] && !countries[a].eliminated && !countries[b].eliminated) {
       if (!countries[a].atWarWith.includes(b)) countries[a].atWarWith.push(b);
       if (!countries[b].atWarWith.includes(a)) countries[b].atWarWith.push(a);
+      countries[a].relations[b] = -90;
+      countries[b].relations[a] = -90;
     }
   }
 
@@ -569,6 +849,10 @@ export function createNewGame(
     gameMode,
     scenarioId,
     difficulty,
+    aiAggressiveness,
+    uiMode,
+    peacefulStartEnabled,
+    eternalEmpireMode: false,
     autoPilotEnabled: gameMode === 'player' && difficulty === 'auto_pilot',
     autoPilotLastAirliftAt: 0,
     autoPilotNextAirliftAt: gameMode === 'player' && difficulty === 'auto_pilot' ? Date.now() + 5000 : 0,
@@ -590,6 +874,11 @@ export function createNewGame(
     recentMissiles: [],
     mapPulses: [],
     airliftVisuals: [],
+    graffitiVisuals: [],
+    xpPopups: [],
+    commanderXp: 0,
+    commanderLevel: 1,
+    commanderRankId: 'cadet',
     waterAlerts,
     nuclearWinterLevel: 0,
     globalWarmingIndex: scenario.isModern ? 28 : 8,
@@ -618,11 +907,13 @@ export function createNewGame(
     ],
     chronicle: [startChronicle],
     pendingEvent: null,
+    pendingWarPrompt: null,
     notifications: [],
     outcome: 'ongoing',
     peakAreaKm2: 0,
     warsWon: 0,
     battlesFought: 0,
+    customNation,
   };
 
   const summaries = computeCountrySummaries(initialState);
@@ -704,12 +995,16 @@ export function recruitUnits(
   };
 
   return {
-    state: {
-      ...state,
-      countries: { ...state.countries, [country.id]: nextCountry },
-      provinces: { ...state.provinces, [prov.id]: nextProv },
-      mapPulses: [pulse, ...(state.mapPulses ?? [])].slice(0, 14),
-    },
+    state: grantCommanderXp(
+      {
+        ...state,
+        countries: { ...state.countries, [country.id]: nextCountry },
+        provinces: { ...state.provinces, [prov.id]: nextProv },
+        mapPulses: [pulse, ...(state.mapPulses ?? [])].slice(0, 14),
+      },
+      6,
+      'Unit Mobilization',
+    ),
   };
 }
 
@@ -735,6 +1030,9 @@ export function constructBuilding(
   if (buildingType === 'spaceport' && !country.unlockedTechs.includes('eco_fusion')) {
     return { state, error: 'Research "Compact Fusion Reactors" in the Tech Tree first.' };
   }
+  if (buildingType === 'nuclear_reactor' && !country.unlockedTechs.includes('eco_fusion')) {
+    return { state, error: 'Research "Compact Fusion Reactors" in the Tech Tree first.' };
+  }
 
   const cost = BUILDING_COSTS[buildingType];
   if (country.treasury < cost) {
@@ -745,24 +1043,28 @@ export function constructBuilding(
   }
 
   return {
-    state: {
-      ...state,
-      countries: {
-        ...state.countries,
-        [country.id]: {
-          ...country,
-          treasury: Number((country.treasury - cost).toFixed(1)),
-          movementPoints: country.movementPoints - 1,
+    state: grantCommanderXp(
+      {
+        ...state,
+        countries: {
+          ...state.countries,
+          [country.id]: {
+            ...country,
+            treasury: Number((country.treasury - cost).toFixed(1)),
+            movementPoints: country.movementPoints - 1,
+          },
+        },
+        provinces: {
+          ...state.provinces,
+          [prov.id]: {
+            ...prov,
+            buildings: [...prov.buildings, buildingType],
+          },
         },
       },
-      provinces: {
-        ...state.provinces,
-        [prov.id]: {
-          ...prov,
-          buildings: [...prov.buildings, buildingType],
-        },
-      },
-    },
+      10,
+      `Constructed ${buildingType}`,
+    ),
   };
 }
 
@@ -784,24 +1086,29 @@ export function assimilateProvince(
   }
 
   return {
-    state: {
-      ...state,
-      countries: {
-        ...state.countries,
-        [player.id]: {
-          ...player,
-          treasury: Number((player.treasury - cost).toFixed(1)),
-          stability: Math.min(100, player.stability + 1),
+    state: grantCommanderXp(
+      {
+        ...state,
+        countries: {
+          ...state.countries,
+          [player.id]: {
+            ...player,
+            treasury: Number((player.treasury - cost).toFixed(1)),
+            stability: Math.min(100, player.stability + 1),
+          },
+        },
+        provinces: {
+          ...state.provinces,
+          [prov.id]: {
+            ...prov,
+            assimilated: true,
+            assimilationProgress: 100,
+          },
         },
       },
-      provinces: {
-        ...state.provinces,
-        [prov.id]: {
-          ...prov,
-          assimilated: true,
-        },
-      },
-    },
+      12,
+      `Assimilated ${prov.name}`,
+    ),
   };
 }
 
@@ -816,6 +1123,7 @@ export function setTaxRate(state: GameState, taxRate: number): GameState {
       [player.id]: {
         ...player,
         taxRate: clamped,
+        budgetSliders: { ...player.budgetSliders, taxRate: clamped },
       },
     },
   };
@@ -835,6 +1143,7 @@ export function takeBankLoan(
   const perTurnPayment = Number((totalRepay / turns).toFixed(1));
   const newLoan: LoanRecord = {
     id: `loan_${state.totalDays}_${Date.now()}`,
+    principal,
     remainingTotal: totalRepay,
     perTurnPayment,
     turnsLeft: turns,
@@ -901,51 +1210,56 @@ export function deploySpy(
   const targetLabel = target.displayName || target.name[lang];
   const now = Date.now();
   return {
-    state: {
-      ...state,
-      countries: {
-        ...state.countries,
-        [player.id]: {
-          ...player,
-          treasury: Number((player.treasury - cost).toFixed(1)),
-          diplomacyPoints: player.diplomacyPoints - 1,
+    state: grantCommanderXp(
+      {
+        ...state,
+        countries: {
+          ...state.countries,
+          [player.id]: {
+            ...player,
+            treasury: Number((player.treasury - cost).toFixed(1)),
+            diplomacyPoints: player.diplomacyPoints - 1,
+          },
+          [target.id]: {
+            ...target,
+            spiedUntil: state.turn + 5,
+          },
         },
-        [target.id]: {
-          ...target,
-          spiedUntil: state.turn + 5,
-        },
+        notifications: [
+          {
+            id: `notif_spy_${now}`,
+            type: 'intel' as const,
+            title: lang === 'pl' ? 'Szpieg wysłany' : 'Spy Network Active',
+            message:
+              lang === 'pl'
+                ? `Ujawniono garnizony państwa ${targetLabel} na 5 m-cy.`
+                : `Garrisons of ${targetLabel} revealed for 5 months.`,
+            createdAt: now,
+          },
+          ...state.notifications,
+        ].slice(0, 10),
       },
-      notifications: [
-        {
-          id: `notif_spy_${now}`,
-          type: 'intel' as const,
-          title: lang === 'pl' ? 'Szpieg wysłany' : 'Spy Network Active',
-          message:
-            lang === 'pl'
-              ? `Ujawniono garnizony państwa ${targetLabel} na 5 m-cy.`
-              : `Garrisons of ${targetLabel} revealed for 5 months.`,
-          createdAt: now,
-        },
-        ...state.notifications,
-      ].slice(0, 10),
-    },
+      12,
+      `Spy Deployed (${targetLabel})`,
+    ),
   };
 }
 
-export type BlackOpType = 'sabotage' | 'foment_rebels' | 'steal_tech';
+export type BlackOpType = 'sabotage' | 'foment_rebels' | 'steal_tech' | 'graffiti_vandalism';
 
 export function executeBlackOp(
   state: GameState,
   targetCountryId: string,
   op: BlackOpType,
   lang: Language = 'en',
+  options?: { targetProvinceId?: string; customSlogan?: string },
 ): { state: GameState; error?: string } {
   const player = state.countries[state.playerCountryId];
   const target = state.countries[targetCountryId];
   if (!player || !target || target.id === player.id || target.eliminated) {
     return { state, error: 'Invalid target nation.' };
   }
-  const cost = op === 'steal_tech' ? 24 : 18;
+  const cost = op === 'steal_tech' ? 24 : op === 'graffiti_vandalism' ? 14 : 18;
   if (player.treasury < cost) return { state, error: `Black Op requires ${cost} PLN.` };
   if (player.diplomacyPoints < 1) return { state, error: 'Requires 1 Diplomacy Point (DP).' };
 
@@ -954,6 +1268,9 @@ export function executeBlackOp(
 
   const nextCountries = { ...state.countries };
   const nextProvs = { ...state.provinces };
+  const nextPulses = [...(state.mapPulses ?? [])];
+  const nextGraffiti = [...(state.graffitiVisuals ?? [])];
+  const nextChronicle = [...state.chronicle];
   const now = Date.now();
   let message = '';
 
@@ -974,11 +1291,67 @@ export function executeBlackOp(
       stability: Math.max(15, target.stability - 14),
     };
     const p = targetProvs[targetProvs.length - 1];
-    nextProvs[p.id] = { ...p, assimilated: false };
+    nextProvs[p.id] = { ...p, assimilated: false, assimilationProgress: 40 };
     message =
       lang === 'pl'
         ? `Powstanie w ${p.name}: stabilność ${target.displayName} spadła o 14%.`
         : `Insurgency sparked in ${p.name}: ${target.displayName} stability dropped -14%.`;
+  } else if (op === 'graffiti_vandalism') {
+    const capProv =
+      (options?.targetProvinceId && nextProvs[options.targetProvinceId]?.ownerId === target.id
+        ? nextProvs[options.targetProvinceId]
+        : undefined) ??
+      targetProvs.find((p) => p.isCapital) ??
+      targetProvs[0];
+    const slogan = getCountryGraffitiSlogan(player.id, player.displayName, options?.customSlogan);
+    const cityName = capProv.capitalCity || capProv.name;
+    nextProvs[capProv.id] = {
+      ...capProv,
+      happiness: Math.max(20, (capProv.happiness ?? 80) - 10),
+      graffitiTag: {
+        slogan,
+        attackerId: player.id,
+        timestamp: now,
+      },
+    };
+    const curRel = target.relations?.[player.id] ?? 0;
+    nextCountries[target.id] = {
+      ...target,
+      stability: Math.max(15, target.stability - 8),
+      relations: { ...target.relations, [player.id]: Math.max(-100, curRel - 25) },
+    };
+    nextGraffiti.unshift({
+      id: `graf_${now}_${capProv.id}`,
+      provinceId: capProv.id,
+      cityName,
+      attackerId: player.id,
+      slogan,
+      centroid: capProv.centroid,
+      createdAt: now,
+    });
+    nextPulses.unshift({
+      id: `pulse_graf_${now}`,
+      kind: 'graffiti',
+      centroid: capProv.centroid,
+      color: player.color,
+      label: slogan,
+      createdAt: now,
+    });
+    message =
+      lang === 'pl'
+        ? `Tajna ekipa zostawiła napis „${slogan}” na murach w ${cityName} (-8% Stabilności ${target.displayName})!`
+        : `Covert operatives painted "${slogan}" across ${cityName} walls (-8% ${target.displayName} Stability)!`;
+    nextChronicle.unshift({
+      id: `chr_graf_${state.totalDays}_${now}`,
+      turn: state.turn,
+      day: state.day,
+      year: state.year,
+      monthIndex: state.monthIndex,
+      type: 'graffiti',
+      title: lang === 'pl' ? 'Akcja Specjalna: Graffiti' : 'Covert Graffiti Operation',
+      detail: `${player.displayName} → ${cityName}: "${slogan}"`,
+      countryIds: [player.id, target.id],
+    });
   } else {
     nextCountries[player.id] = {
       ...player,
@@ -997,21 +1370,35 @@ export function executeBlackOp(
   };
 
   return {
-    state: {
-      ...state,
-      countries: nextCountries,
-      provinces: nextProvs,
-      notifications: [
-        {
-          id: `notif_blackop_${now}`,
-          type: 'intel' as const,
-          title: lang === 'pl' ? 'Operacja Specjalna' : 'Black Ops Executed',
-          message,
-          createdAt: now,
-        },
-        ...state.notifications,
-      ].slice(0, 10),
-    },
+    state: grantCommanderXp(
+      {
+        ...state,
+        countries: nextCountries,
+        provinces: nextProvs,
+        mapPulses: nextPulses.slice(0, 14),
+        graffitiVisuals: nextGraffiti.slice(0, 16),
+        chronicle: nextChronicle.slice(0, 120),
+        notifications: [
+          {
+            id: `notif_blackop_${now}`,
+            type: 'intel' as const,
+            title:
+              op === 'graffiti_vandalism'
+                ? lang === 'pl'
+                  ? 'Operacja Graffiti!'
+                  : 'Covert Graffiti Strike!'
+                : lang === 'pl'
+                ? 'Operacja Specjalna'
+                : 'Black Ops Executed',
+            message,
+            createdAt: now,
+          },
+          ...state.notifications,
+        ].slice(0, 10),
+      },
+      op === 'graffiti_vandalism' ? 22 : 18,
+      op === 'graffiti_vandalism' ? 'Covert Graffiti Raid' : 'Black Op Executed',
+    ),
   };
 }
 
@@ -1079,28 +1466,35 @@ export function issueArmyOrder(
   );
   const durationDays = isRail ? Math.max(1, Math.ceil(baseDuration / 3)) : baseDuration;
 
-  let nextCountries = state.countries;
+  const nextCountries = { ...state.countries };
   const nextChronicle = [...state.chronicle];
+  const nextNotifications = [...state.notifications];
 
   if (isAttack && !player.atWarWith.includes(to.ownerId)) {
-    const targetCountry = state.countries[to.ownerId];
+    const targetCountry = nextCountries[to.ownerId];
     if (targetCountry) {
-      nextCountries = {
-        ...state.countries,
-        [player.id]: {
-          ...player,
-          movementPoints: player.movementPoints - mpCost,
-          allies: player.allies.filter((id) => id !== targetCountry.id),
-          atWarWith: [...player.atWarWith, targetCountry.id],
-        },
-        [targetCountry.id]: {
-          ...targetCountry,
-          allies: targetCountry.allies.filter((id) => id !== player.id),
-          atWarWith: targetCountry.atWarWith.includes(player.id)
-            ? targetCountry.atWarWith
-            : [...targetCountry.atWarWith, player.id],
-        },
+      nextCountries[player.id] = {
+        ...player,
+        movementPoints: player.movementPoints - mpCost,
+        allies: player.allies.filter((id) => id !== targetCountry.id),
+        atWarWith: [...player.atWarWith, targetCountry.id],
       };
+      nextCountries[targetCountry.id] = {
+        ...targetCountry,
+        allies: targetCountry.allies.filter((id) => id !== player.id),
+        atWarWith: targetCountry.atWarWith.includes(player.id)
+          ? targetCountry.atWarWith
+          : [...targetCountry.atWarWith, player.id],
+      };
+      triggerArticle5AndBreakPacts(
+        state,
+        nextCountries,
+        player.id,
+        targetCountry.id,
+        'en',
+        nextChronicle,
+        nextNotifications,
+      );
       nextChronicle.unshift({
         id: `chr_war_ord_${state.totalDays}_${Date.now()}`,
         turn: state.turn,
@@ -1114,12 +1508,9 @@ export function issueArmyOrder(
       });
     }
   } else {
-    nextCountries = {
-      ...state.countries,
-      [player.id]: {
-        ...player,
-        movementPoints: player.movementPoints - mpCost,
-      },
+    nextCountries[player.id] = {
+      ...player,
+      movementPoints: player.movementPoints - mpCost,
     };
   }
 
@@ -1149,6 +1540,7 @@ export function issueArmyOrder(
         },
       },
       orders: [...state.orders, order],
+      notifications: nextNotifications.slice(0, 10),
       chronicle: nextChronicle.slice(0, 120),
     },
   };
@@ -1197,18 +1589,22 @@ export function spendResearch(
   }
   const nextTech = { ...player.tech, [branch]: player.tech[branch] + 1 };
   return {
-    state: {
-      ...state,
-      countries: {
-        ...state.countries,
-        [player.id]: {
-          ...player,
-          researchPoints: player.researchPoints - cost,
-          tech: nextTech,
-          maxMovementPoints: 8 + nextTech.logistics,
+    state: grantCommanderXp(
+      {
+        ...state,
+        countries: {
+          ...state.countries,
+          [player.id]: {
+            ...player,
+            researchPoints: player.researchPoints - cost,
+            tech: nextTech,
+            maxMovementPoints: 8 + nextTech.logistics,
+          },
         },
       },
-    },
+      20,
+      `Research ${branch}`,
+    ),
   };
 }
 
@@ -1238,22 +1634,26 @@ export function researchTechNode(
   };
 
   return {
-    state: {
-      ...state,
-      countries: {
-        ...state.countries,
-        [player.id]: {
-          ...player,
-          researchPoints: Number((player.researchPoints - def.costRp).toFixed(1)),
-          tech: nextTech,
-          maxMovementPoints: 8 + nextTech.logistics,
-          unlockedTechs: [...player.unlockedTechs, nodeId],
-          techQueue: player.techQueue.filter((q) => q !== nodeId),
-          orbitalShieldActive:
-            player.orbitalShieldActive || nodeId === 'log_orbital_shields',
+    state: grantCommanderXp(
+      {
+        ...state,
+        countries: {
+          ...state.countries,
+          [player.id]: {
+            ...player,
+            researchPoints: Number((player.researchPoints - def.costRp).toFixed(1)),
+            tech: nextTech,
+            maxMovementPoints: 8 + nextTech.logistics,
+            unlockedTechs: [...player.unlockedTechs, nodeId],
+            techQueue: player.techQueue.filter((q) => q !== nodeId),
+            orbitalShieldActive:
+              player.orbitalShieldActive || nodeId === 'log_orbital_shields',
+          },
         },
       },
-    },
+      25,
+      `Researched ${def.title.en}`,
+    ),
   };
 }
 
@@ -1695,31 +2095,35 @@ export function fundSpaceOceanColony(
 
   const now = Date.now();
   return {
-    state: {
-      ...state,
-      countries: {
-        ...state.countries,
-        [player.id]: {
-          ...player,
-          treasury: Number((player.treasury - node.costPln).toFixed(1)),
-          spaceColonies: [...player.spaceColonies, nodeId],
+    state: grantCommanderXp(
+      {
+        ...state,
+        countries: {
+          ...state.countries,
+          [player.id]: {
+            ...player,
+            treasury: Number((player.treasury - node.costPln).toFixed(1)),
+            spaceColonies: [...player.spaceColonies, nodeId],
+          },
         },
+        chronicle: [
+          {
+            id: `chr_space_${now}`,
+            turn: state.turn,
+            day: state.day,
+            year: state.year,
+            monthIndex: state.monthIndex,
+            type: 'space' as const,
+            title: lang === 'pl' ? 'Ekspansja Kosmosu i Oceanów' : 'Frontier Colony Established',
+            detail: `${player.displayName}: ${node.name[lang]}`,
+            countryIds: [player.id],
+          },
+          ...state.chronicle,
+        ].slice(0, 120),
       },
-      chronicle: [
-        {
-          id: `chr_space_${now}`,
-          turn: state.turn,
-          day: state.day,
-          year: state.year,
-          monthIndex: state.monthIndex,
-          type: 'space' as const,
-          title: lang === 'pl' ? 'Ekspansja Kosmosu i Oceanów' : 'Frontier Colony Established',
-          detail: `${player.displayName}: ${node.name[lang]}`,
-          countryIds: [player.id],
-        },
-        ...state.chronicle,
-      ].slice(0, 120),
-    },
+      50,
+      `Colony: ${node.name.en}`,
+    ),
   };
 }
 
@@ -1754,6 +2158,8 @@ export function proposeDiplomacy(
   const nextChronicle: ChronicleEntry[] = [...state.chronicle];
   const now = Date.now();
   const targetLabel = target.displayName || target.name[lang];
+  let xpGain = 0;
+  let xpReason = '';
 
   if (action === 'war') {
     if (player.atWarWith.includes(target.id)) return { state, error: 'Already at war with this nation.' };
@@ -1777,6 +2183,15 @@ export function proposeDiplomacy(
       nonAggressionWith: nextNapTarget,
       atWarWith: [...target.atWarWith, player.id],
     };
+    triggerArticle5AndBreakPacts(
+      state,
+      nextCountries,
+      player.id,
+      target.id,
+      lang,
+      nextChronicle,
+      nextNotifications,
+    );
     nextNotifications.unshift({
       id: `notif_war_${now}`,
       type: 'war',
@@ -1795,6 +2210,8 @@ export function proposeDiplomacy(
       detail: `${player.displayName} ⚔️ ${targetLabel}`,
       countryIds: [player.id, target.id],
     });
+    xpGain = 15;
+    xpReason = `War Declared (${targetLabel})`;
   } else if (action === 'alliance') {
     if (player.atWarWith.includes(target.id)) {
       return { state, error: 'Cannot form an alliance while at war.' };
@@ -1817,10 +2234,12 @@ export function proposeDiplomacy(
       ...player,
       diplomacyPoints: player.diplomacyPoints - 1,
       allies: [...player.allies, target.id],
+      relations: { ...player.relations, [target.id]: Math.min(100, (player.relations?.[target.id] ?? 0) + 35) },
     };
     nextCountries[target.id] = {
       ...target,
       allies: [...target.allies, player.id],
+      relations: { ...target.relations, [player.id]: Math.min(100, (target.relations?.[player.id] ?? 0) + 35) },
     };
     nextNotifications.unshift({
       id: `notif_ally_${now}`,
@@ -1840,6 +2259,8 @@ export function proposeDiplomacy(
       detail: `${player.displayName} 🤝 ${targetLabel}`,
       countryIds: [player.id, target.id],
     });
+    xpGain = 24;
+    xpReason = `Alliance Signed (${targetLabel})`;
   } else if (action === 'nap') {
     if (player.atWarWith.includes(target.id)) {
       return { state, error: 'Sign a peace treaty before signing a Non-Aggression Pact.' };
@@ -1860,6 +2281,8 @@ export function proposeDiplomacy(
       message: `${player.displayName} 🛡️ ${targetLabel}`,
       createdAt: now,
     });
+    xpGain = 15;
+    xpReason = 'Non-Aggression Pact';
   } else if (action === 'access') {
     if (player.atWarWith.includes(target.id)) {
       return { state, error: 'Cannot request military access during war.' };
@@ -1883,6 +2306,8 @@ export function proposeDiplomacy(
       message: `${player.displayName} 🥾 ${targetLabel}`,
       createdAt: now,
     });
+    xpGain = 10;
+    xpReason = 'Military Access';
   } else if (action === 'ultimatum' || action === 'vassalize') {
     if (target.vassalOf === player.id) {
       return { state, error: `${targetLabel} is already your vassal.` };
@@ -1903,6 +2328,15 @@ export function proposeDiplomacy(
           ...target,
           atWarWith: [...target.atWarWith, player.id],
         };
+        triggerArticle5AndBreakPacts(
+          state,
+          nextCountries,
+          player.id,
+          target.id,
+          lang,
+          nextChronicle,
+          nextNotifications,
+        );
         nextNotifications.unshift({
           id: `notif_ult_war_${now}`,
           type: 'war',
@@ -1945,7 +2379,7 @@ export function proposeDiplomacy(
         id: `notif_vas_${now}`,
         type: 'alliance',
         title: lang === 'pl' ? 'Nowy Wasal!' : 'Vassal Subjugated!',
-        message: `${targetLabel} now pays 22% tribute to ${player.displayName}.`,
+        message: `${targetLabel} now pays ${target.vassalTributePct ?? 22}% tribute to ${player.displayName}.`,
         createdAt: now,
       });
       nextChronicle.unshift({
@@ -1959,6 +2393,8 @@ export function proposeDiplomacy(
         detail: `${targetLabel} became a vassal of ${player.displayName}.`,
         countryIds: [player.id, target.id],
       });
+      xpGain = 35;
+      xpReason = `Vassal Subjugated (${targetLabel})`;
     }
   } else if (action === 'aid25' || action === 'aid50') {
     const fraction = action === 'aid25' ? 0.25 : 0.5;
@@ -1968,10 +2404,12 @@ export function proposeDiplomacy(
       ...player,
       diplomacyPoints: player.diplomacyPoints - 1,
       treasury: Number((player.treasury - amount).toFixed(1)),
+      relations: { ...player.relations, [target.id]: Math.min(100, (player.relations?.[target.id] ?? 0) + 20) },
     };
     nextCountries[target.id] = {
       ...target,
       treasury: Number((target.treasury + amount).toFixed(1)),
+      relations: { ...target.relations, [player.id]: Math.min(100, (target.relations?.[player.id] ?? 0) + 20) },
     };
     nextNotifications.unshift({
       id: `notif_aid_${now}`,
@@ -1980,6 +2418,8 @@ export function proposeDiplomacy(
       message: `${amount} PLN → ${targetLabel}`,
       createdAt: now,
     });
+    xpGain = 10;
+    xpReason = 'Foreign Aid';
   } else if (action === 'peace') {
     if (!player.atWarWith.includes(target.id)) {
       return { state, error: 'Not at war with this nation.' };
@@ -2026,14 +2466,20 @@ export function proposeDiplomacy(
       detail: `${player.displayName} 🕊️ ${targetLabel}`,
       countryIds: [player.id, target.id],
     });
+    xpGain = 25;
+    xpReason = `Peace Treaty (${targetLabel})`;
   }
 
-  let resultState: GameState = {
-    ...state,
-    countries: nextCountries,
-    notifications: nextNotifications.slice(0, 10),
-    chronicle: nextChronicle.slice(0, 120),
-  };
+  let resultState: GameState = grantCommanderXp(
+    {
+      ...state,
+      countries: nextCountries,
+      notifications: nextNotifications.slice(0, 10),
+      chronicle: nextChronicle.slice(0, 120),
+    },
+    xpGain,
+    xpReason,
+  );
 
   // Instant Auto-Pilot War Mobilization & Immediate 5-second Airlift Countdown!
   if (action === 'war' && resultState.autoPilotEnabled && resultState.gameMode === 'player') {
@@ -2424,7 +2870,12 @@ function cloneState(prevState: GameState): GameState {
     provinces: Object.fromEntries(
       Object.entries(prevState.provinces).map(([k, p]) => [
         k,
-        { ...p, buildings: [...p.buildings], units: { ...p.units } },
+        {
+          ...p,
+          buildings: [...p.buildings],
+          units: { ...p.units },
+          graffitiTag: p.graffitiTag ? { ...p.graffitiTag } : null,
+        },
       ]),
     ),
     countries: Object.fromEntries(
@@ -2437,15 +2888,22 @@ function cloneState(prevState: GameState): GameState {
           nonAggressionWith: { ...c.nonAggressionWith },
           militaryAccessWith: [...c.militaryAccessWith],
           truceWith: { ...c.truceWith },
+          relations: { ...(c.relations ?? {}) },
+          guarantees: [...(c.guarantees ?? [])],
+          sanctionedBy: [...(c.sanctionedBy ?? [])],
+          lendLeaseTo: [...(c.lendLeaseTo ?? [])],
           vassals: [...c.vassals],
           loans: c.loans.map((l) => ({ ...l })),
           tech: { ...c.tech },
           unlockedTechs: [...c.unlockedTechs],
           techQueue: [...c.techQueue],
+          budgetSliders: { ...(c.budgetSliders ?? { taxRate: c.taxRate, goodsSpending: 8, investmentsSpending: 6, researchSpending: 8, militarySpending: 100 }) },
           cabinet: { ...c.cabinet },
           stockpiles: { ...c.stockpiles },
           megaprojects: [...c.megaprojects],
           spaceColonies: [...c.spaceColonies],
+          generals: (c.generals ?? []).map((g) => ({ ...g })),
+          unlockedLegacyPerks: [...(c.unlockedLegacyPerks ?? [])],
         },
       ]),
     ),
@@ -2454,6 +2912,8 @@ function cloneState(prevState: GameState): GameState {
     recentMissiles: prevState.recentMissiles.filter((m) => now - m.createdAt < 3500),
     mapPulses: (prevState.mapPulses ?? []).filter((p) => now - p.createdAt < 4600),
     airliftVisuals: (prevState.airliftVisuals ?? []).filter((a: AirliftOrderVisual) => now - a.createdAt < 4800),
+    graffitiVisuals: (prevState.graffitiVisuals ?? []).filter((g) => now - g.createdAt < 9000),
+    xpPopups: (prevState.xpPopups ?? []).filter((x) => now - x.createdAt < 4500),
     customBlueprints: [...(prevState.customBlueprints ?? [])],
     activeSatellites: (prevState.activeSatellites ?? []).filter((s) => s.expiresDay >= prevState.totalDays),
     blockadedStraits: { ...(prevState.blockadedStraits ?? {}) },
@@ -2468,7 +2928,8 @@ export function advanceDay(prevState: GameState, lang: Language = 'en'): GameSta
   if (prevState.outcome !== 'ongoing') return prevState;
 
   const isSpectator = prevState.gameMode === 'bot_spectator';
-  const state = cloneState(prevState);
+  let state = cloneState(prevState);
+  const hardcore = isHardcoreGeopolitics(state.difficulty, state.uiMode);
 
   state.totalDays += 1;
   state.day += 1;
@@ -2477,6 +2938,8 @@ export function advanceDay(prevState: GameState, lang: Language = 'en'): GameSta
   const remainingOrders: ArmyOrder[] = [];
   const battles: BattleEvent[] = [];
   let warsWonDelta = 0;
+  let pendingXpAmount = 0;
+  let pendingXpReason = '';
 
   for (const order of state.orders) {
     const elapsed = state.totalDays - order.startDay;
@@ -2505,8 +2968,6 @@ export function advanceDay(prevState: GameState, lang: Language = 'en'): GameSta
       if (!attackerCountry || !defenderCountry) continue;
 
       // Automatic Adjacent Border Reserve Reinforcement:
-      // Adjacent friendly land provinces with >= 3,000 garrison send up to 25% reserve troops
-      // into the attacked border province immediately before battle resolution (conserves total army).
       let reserveTotal = 0;
       let reinforcingNeighbors = 0;
       for (const nId of to.neighbors) {
@@ -2540,6 +3001,10 @@ export function advanceDay(prevState: GameState, lang: Language = 'en'): GameSta
       const attMinBonus = attackerCountry.cabinet.defense
         ? CABINET_MINISTERS.find((m) => m.id === attackerCountry.cabinet.defense)?.attackBonus ?? 0
         : 0;
+      const genBonus =
+        attackerCountry.generals && attackerCountry.generals.length > 0
+          ? attackerCountry.generals.reduce((b, g) => Math.max(b, g.attackBonus * (1 + (g.level - 1) * 0.12)), 0)
+          : 0;
       const hasWaterStorm = state.waterAlerts.some((w) =>
         w.affectedProvinceIds.includes(to.id),
       );
@@ -2558,7 +3023,7 @@ export function advanceDay(prevState: GameState, lang: Language = 'en'): GameSta
         battleId: `btl_${state.totalDays}_${order.fromProvinceId}_${to.id}_${battles.length}`,
         isNavalAssault: order.isNaval,
         hasWaterStorm,
-        attackerMinisterBonus: attMinBonus,
+        attackerMinisterBonus: attMinBonus + genBonus,
         customBlueprints: state.customBlueprints,
       });
 
@@ -2577,9 +3042,60 @@ export function advanceDay(prevState: GameState, lang: Language = 'en'): GameSta
 
       if (battleResult.captured) {
         const oldOwnerId = to.ownerId;
-        to.ownerId = order.countryId;
-        to.units = battleResult.survivingAttackers;
-        to.assimilated = to.originalCountryId === order.countryId;
+        const origAlly =
+          hardcore &&
+          to.originalCountryId !== order.countryId &&
+          attackerCountry.allies.includes(to.originalCountryId) &&
+          state.countries[to.originalCountryId] &&
+          !state.countries[to.originalCountryId].eliminated
+            ? state.countries[to.originalCountryId]
+            : null;
+
+        if (origAlly) {
+          // Allied Liberation Transfer: returning liberated core territory to living allied owner
+          to.ownerId = origAlly.id;
+          to.assimilated = true;
+          to.assimilationProgress = 100;
+          if (from && from.ownerId === order.countryId) {
+            from.units = addUnits(from.units, battleResult.survivingAttackers);
+          } else {
+            to.units = battleResult.survivingAttackers;
+          }
+          state.chronicle.unshift({
+            id: `chr_lib_${state.totalDays}_${to.id}_${battles.length}`,
+            turn: state.turn,
+            day: state.day,
+            year: state.year,
+            monthIndex: state.monthIndex,
+            type: 'alliance',
+            title: lang === 'pl' ? 'Wyzwolenie Terytorium Sojusznika' : 'Allied Liberation Transfer',
+            detail: `${attackerCountry.displayName} → ${to.name} returned to ${origAlly.displayName}`,
+            countryIds: [order.countryId, origAlly.id],
+          });
+        } else {
+          to.ownerId = order.countryId;
+          to.units = battleResult.survivingAttackers;
+          to.assimilated = to.originalCountryId === order.countryId;
+          to.assimilationProgress = to.assimilated ? 100 : 12;
+        }
+
+        // General leveling on victory
+        if (attackerCountry.generals && attackerCountry.generals.length > 0) {
+          const gen = attackerCountry.generals[0];
+          gen.xp += 15;
+          if (gen.xp >= gen.level * 60) {
+            gen.xp -= gen.level * 60;
+            gen.level += 1;
+            gen.attackBonus = Number((gen.attackBonus + 0.02).toFixed(2));
+            gen.defenseBonus = Number((gen.defenseBonus + 0.02).toFixed(2));
+          }
+        }
+
+        if (order.countryId === state.playerCountryId) {
+          pendingXpAmount += 35;
+          pendingXpReason = `Captured ${to.name}`;
+          attackerCountry.legacyPoints = (attackerCountry.legacyPoints ?? 0) + 5;
+        }
 
         const attName = attackerCountry.displayName || attackerCountry.name[lang];
         const defName = defenderCountry.displayName || defenderCountry.name[lang];
@@ -2594,10 +3110,14 @@ export function advanceDay(prevState: GameState, lang: Language = 'en'): GameSta
                 ? lang === 'pl'
                   ? 'Utracono prowincję!'
                   : 'Province Lost!'
+                : origAlly
+                ? lang === 'pl'
+                  ? 'Wyzwolono Sojusznika!'
+                  : 'Allied Territory Liberated!'
                 : lang === 'pl'
                 ? 'Zdobyto prowincję!'
                 : 'Province Captured!',
-            message: `${attName} → ${to.name} (${defName})`,
+            message: origAlly ? `${to.name} → ${origAlly.displayName}` : `${attName} → ${to.name} (${defName})`,
             createdAt: now,
           });
         }
@@ -2625,6 +3145,10 @@ export function advanceDay(prevState: GameState, lang: Language = 'en'): GameSta
         if (from && from.ownerId === order.countryId) {
           from.units = addUnits(from.units, battleResult.survivingAttackers);
         }
+        if (to.ownerId === state.playerCountryId && !battleResult.event.attackerWon) {
+          pendingXpAmount += 18;
+          pendingXpReason = `Defended ${to.name}`;
+        }
         if (order.countryId === state.playerCountryId) {
           const defName = defenderCountry.displayName || defenderCountry.name[lang];
           state.notifications.unshift({
@@ -2640,6 +3164,9 @@ export function advanceDay(prevState: GameState, lang: Language = 'en'): GameSta
   }
 
   state.orders = remainingOrders;
+  if (pendingXpAmount > 0) {
+    state = grantCommanderXp(state, pendingXpAmount, pendingXpReason);
+  }
 
   // Daily passive MP recharge, Golden Age countdown, & queued Tech Tree auto-unlock
   for (const c of Object.values(state.countries)) {
@@ -2666,16 +3193,20 @@ export function advanceDay(prevState: GameState, lang: Language = 'en'): GameSta
     }
   }
 
-  // Periodic AI operations (every 10 days) so real-time battlefronts evolve smoothly
+  // Periodic AI operations (every 10 days)
   if (state.totalDays % 10 === 0) {
     const aiResult = generateAiOrdersAndActions(state, lang);
     for (let i = aiResult.chronicleEntries.length - 1; i >= 0; i--) {
       state.chronicle.unshift(aiResult.chronicleEntries[i]);
     }
     state.orders.push(...aiResult.orders);
+    if (aiResult.pendingWarPrompt && state.peacefulStartEnabled && state.gameMode === 'player' && !state.pendingWarPrompt) {
+      state.pendingWarPrompt = aiResult.pendingWarPrompt;
+      state.simPaused = true;
+    }
   }
 
-  // Periodic Auto-Pilot daily strategic oversight (every 6 days)
+  // Periodic Smart Auto-Pilot daily strategic oversight (every 6 days)
   if (state.autoPilotEnabled && state.gameMode === 'player' && state.totalDays % 6 === 0) {
     const apRes = runAutoPilotCommand(state, lang, { allowAirlift: false });
     Object.assign(state, apRes.state);
@@ -2701,7 +3232,7 @@ export function advanceDay(prevState: GameState, lang: Language = 'en'): GameSta
     }
   }
 
-  // 2. Monthly economy, Research, Manpower, Loans, Weather & Date rollover (every 30 days)
+  // 2. Monthly economy, Budget Sliders, Research, Assimilation, Manpower, Loans, Weather & Date rollover
   let nextPendingEvent = state.pendingEvent;
   if (state.day > 30) {
     state.day = 1;
@@ -2714,9 +3245,13 @@ export function advanceDay(prevState: GameState, lang: Language = 'en'): GameSta
 
     const summaries = computeCountrySummaries(state);
     const uniCountByCountry: Record<string, number> = {};
+    const libCountByCountry: Record<string, number> = {};
     for (const prov of Object.values(state.provinces)) {
       if (prov.buildings.includes('university')) {
         uniCountByCountry[prov.ownerId] = (uniCountByCountry[prov.ownerId] ?? 0) + 1;
+      }
+      if (prov.buildings.includes('library')) {
+        libCountByCountry[prov.ownerId] = (libCountByCountry[prov.ownerId] ?? 0) + 1;
       }
     }
 
@@ -2745,17 +3280,26 @@ export function advanceDay(prevState: GameState, lang: Language = 'en'): GameSta
       }
 
       country.treasury = Math.max(0, Number((country.treasury + sum.incomePerTurn).toFixed(1)));
+      country.legacyPoints = (country.legacyPoints ?? 0) + 4;
 
       const sciMin = country.cabinet.science
         ? CABINET_MINISTERS.find((m) => m.id === country.cabinet.science)?.researchBonus ?? 0
         : 0;
+      const legacyRpMult = country.unlockedLegacyPerks?.includes('leg_academy_patron') ? 1.25 : 1.0;
+      const faithRpMult = country.resurrectedFaithId === 'hellenic' ? 1.15 : 1.0;
+      const sliderRpMult = 1 + ((country.budgetSliders?.researchSpending ?? 8) - 8) * 0.025;
       const spaceRp = country.spaceColonies.reduce((acc, nid) => {
         const sn = SPACE_OCEAN_NODES.find((x) => x.id === nid);
         return acc + (sn?.researchPerMonth ?? 0);
       }, 0);
       const megaRp = country.megaprojects.includes('fusion_core') ? 12 : 0;
-      const uniResearch = (uniCountByCountry[country.id] ?? 0) * 3.5;
-      const rawRp = (6 + Math.floor(sum.provinceCount * 1.5) + uniResearch + spaceRp + megaRp) * (1 + sciMin);
+      const uniResearch = (uniCountByCountry[country.id] ?? 0) * 3.5 + (libCountByCountry[country.id] ?? 0) * 1.8;
+      const rawRp =
+        (6 + Math.floor(sum.provinceCount * 1.5) + uniResearch + spaceRp + megaRp) *
+        (1 + sciMin) *
+        legacyRpMult *
+        faithRpMult *
+        sliderRpMult;
       country.researchPoints = Number((country.researchPoints + rawRp).toFixed(1));
 
       country.maxMovementPoints =
@@ -2767,11 +3311,13 @@ export function advanceDay(prevState: GameState, lang: Language = 'en'): GameSta
       country.maxManpower = Math.max(35000, Math.min(6_500_000, Math.round(sum.population * 0.045)));
       country.manpower = Math.min(country.maxManpower, country.manpower + manpowerRecovery);
 
-      if (country.taxRate > 25) {
-        country.stability = Math.max(25, country.stability - Math.ceil((country.taxRate - 25) / 5));
-      } else if (country.taxRate <= 14) {
-        country.stability = Math.min(100, country.stability + 1);
-      }
+      const effTax = country.budgetSliders?.taxRate ?? country.taxRate;
+      const goodsSlider = country.budgetSliders?.goodsSpending ?? 8;
+      let stabDelta = 0;
+      if (effTax > 25) stabDelta -= Math.ceil((effTax - 25) / 5);
+      else if (effTax <= 14) stabDelta += 1;
+      if (goodsSlider >= 14) stabDelta += goodsSlider >= 22 ? 2 : 1;
+      country.stability = Math.max(20, Math.min(100, country.stability + stabDelta));
 
       country.loans = country.loans
         .map((l) => ({
@@ -2819,7 +3365,7 @@ export function advanceDay(prevState: GameState, lang: Language = 'en'): GameSta
       };
     }
 
-    // Natural nuclear winter cooling & Global Warming Index update
+    // Natural nuclear winter cooling & Global Warming Index update + province Happiness / Assimilation / Dev
     if (state.nuclearWinterLevel > 0) {
       state.nuclearWinterLevel = Math.max(0, state.nuclearWinterLevel - 2);
     }
@@ -2829,6 +3375,7 @@ export function advanceDay(prevState: GameState, lang: Language = 'en'): GameSta
     let idx = 0;
     for (const prov of Object.values(state.provinces)) {
       if (prov.buildings.includes('factory')) factoryCount += 1;
+      if (prov.buildings.includes('nuclear_reactor')) ecoWarmingOffset += 0.12;
       const growth = prov.buildings.includes('farm') ? 1.008 : 1.002;
       prov.population = Math.round(prov.population * growth);
       prov.weather = computeProvinceWeather(prov.centroid, state.season, state.turn, idx);
@@ -2846,16 +3393,36 @@ export function advanceDay(prevState: GameState, lang: Language = 'en'): GameSta
         prov.nuclearDevastation = Math.max(0, prov.nuclearDevastation - 4);
       }
 
-      // Extreme Cold (< -15°C) or Extreme Heat (> +38°C) attrition for un-supplied armies during war
       const owner = state.countries[prov.ownerId];
-      if (owner && owner.atWarWith.length > 0 && !prov.assimilated) {
-        const attr = getExtremeClimateAttrition(
-          prov.temperatureC,
-          owner.tech.logistics,
-          owner.isPlayer && state.difficulty === 'world_conquest',
+      if (owner) {
+        // Assimilation progress & happiness drift
+        if (!prov.assimilated) {
+          const step = owner.unlockedLegacyPerks?.includes('leg_civic_harmony') ? 18 : 9;
+          prov.assimilationProgress = Math.min(100, (prov.assimilationProgress ?? 10) + step);
+          if (prov.assimilationProgress >= 100) prov.assimilated = true;
+        }
+        const targetHappy = Math.max(
+          25,
+          Math.min(
+            99,
+            Math.round(64 + (owner.budgetSliders?.goodsSpending ?? 8) * 1.4 - (owner.budgetSliders?.taxRate ?? owner.taxRate) * 0.45),
+          ),
         );
-        if (attr.attritionRate > 0 && getTotalUnits(prov.units) > 1200) {
-          prov.units = scaleUnits(prov.units, 1 - attr.attritionRate * 0.45);
+        prov.happiness = Math.round(((prov.happiness ?? 75) * 0.7 + targetHappy * 0.3));
+        if ((owner.budgetSliders?.investmentsSpending ?? 6) >= 12 && prov.isCapital) {
+          prov.economy = Number((prov.economy + 0.04).toFixed(2));
+        }
+
+        // Extreme Cold or Extreme Heat attrition
+        if (owner.atWarWith.length > 0 && !prov.assimilated && owner.resurrectedFaithId !== 'norse_asatru') {
+          const attr = getExtremeClimateAttrition(
+            prov.temperatureC,
+            owner.tech.logistics,
+            owner.isPlayer && (state.difficulty === 'world_conquest' || state.difficulty === 'very_easy_plus'),
+          );
+          if (attr.attritionRate > 0 && getTotalUnits(prov.units) > 1200) {
+            prov.units = scaleUnits(prov.units, 1 - attr.attritionRate * 0.45);
+          }
         }
       }
     }
@@ -2913,13 +3480,13 @@ export function advanceDay(prevState: GameState, lang: Language = 'en'): GameSta
     }
   }
 
-  // 3. Check Victory / Defeat conditions & Extremely Easy+ Comeback Protocol
+  // 3. Check Victory / Defeat conditions & VERY EASY+ / EXTREMELY EASY+ Comeback Protocol
   let summariesNow = computeCountrySummaries(state);
   const totalProvs = Object.keys(state.provinces).length;
   let outcome: GameState['outcome'] = 'ongoing';
   let peakAreaKm2 = prevState.peakAreaKm2;
 
-  if (!isSpectator && state.difficulty === 'extremely_easy_plus') {
+  if (!isSpectator && (state.difficulty === 'very_easy_plus' || state.difficulty === 'extremely_easy_plus')) {
     const player = state.countries[state.playerCountryId];
     const playerSum = summariesNow[state.playerCountryId];
     const playerProvs = Object.values(state.provinces).filter((p) => p.ownerId === state.playerCountryId);
@@ -2968,7 +3535,7 @@ export function advanceDay(prevState: GameState, lang: Language = 'en'): GameSta
       state.notifications.unshift({
         id: `notif_comeback_${now}`,
         type: 'conquest',
-        title: lang === 'pl' ? 'Protokół Ratunkowy EXTREME EASY+!' : 'Emergency Comeback Protocol Activated!',
+        title: lang === 'pl' ? 'Protokół Ratunkowy VERY EASY+!' : 'Emergency Comeback Protocol Activated!',
         message:
           lang === 'pl'
             ? `+140 PLN, +35 000 rezerw oraz 14 000 elitarnych jednostek w ${bastion.name}!`
@@ -2994,7 +3561,7 @@ export function advanceDay(prevState: GameState, lang: Language = 'en'): GameSta
     const leader = Object.values(summariesNow)
       .filter((s) => s.provinceCount > 0)
       .sort((a, b) => b.provinceCount - a.provinceCount)[0];
-    if (leader && leader.provinceCount >= Math.ceil(totalProvs * 0.55)) {
+    if (leader && leader.provinceCount === totalProvs && !state.eternalEmpireMode) {
       outcome = 'victory';
     }
     peakAreaKm2 = Math.max(prevState.peakAreaKm2, leader?.areaKm2 ?? 0);
@@ -3003,7 +3570,8 @@ export function advanceDay(prevState: GameState, lang: Language = 'en'): GameSta
     const playerProvs = playerSum?.provinceCount ?? 0;
     if (playerProvs === 0) {
       outcome = 'defeat';
-    } else if (playerProvs >= Math.ceil(totalProvs * 0.45)) {
+    } else if (totalProvs > 0 && playerProvs === totalProvs && !state.eternalEmpireMode) {
+      // True 100% World Conquest requirement!
       outcome = 'victory';
     }
     peakAreaKm2 = Math.max(prevState.peakAreaKm2, playerSum?.areaKm2 ?? 0);
@@ -3031,7 +3599,817 @@ export function advanceDays(prevState: GameState, days: number, lang: Language =
   return curr;
 }
 
-// Execute a full 30-day economic & military simulation cycle (convenient helper for headless tests)
+// Execute a full 30-day economic & military simulation cycle
 export function executeTurn(prevState: GameState, lang: Language = 'en'): GameState {
   return advanceDays(prevState, 30, lang);
+}
+
+// ============================================================
+// VERSION 4.0 GAMEPLAY & DIPLOMACY ACTIONS
+// ============================================================
+
+export function continueEternalEmpire(state: GameState): GameState {
+  return {
+    ...state,
+    outcome: 'ongoing',
+    eternalEmpireMode: true,
+    simPaused: false,
+  };
+}
+
+export function togglePeacefulStart(state: GameState, enabled: boolean): GameState {
+  return {
+    ...state,
+    peacefulStartEnabled: enabled,
+  };
+}
+
+export function resolveWarPrompt(
+  state: GameState,
+  acceptWar: boolean,
+  lang: Language = 'en',
+): { state: GameState; error?: string } {
+  const prompt = state.pendingWarPrompt;
+  if (!prompt) return { state };
+  const player = state.countries[state.playerCountryId];
+  const attacker = state.countries[prompt.attackerId];
+  if (!player || !attacker) {
+    return { state: { ...state, pendingWarPrompt: null } };
+  }
+
+  if (!acceptWar) {
+    if (!prompt.vetoAllowed) {
+      return {
+        state,
+        error:
+          lang === 'pl'
+            ? 'W trybie EXTREME ULTRA IMPOSSIBLE weta dyplomatyczne są zablokowane!'
+            : 'Diplomatic Veto is disabled in EXTREME ULTRA IMPOSSIBLE mode!',
+      };
+    }
+    if (player.diplomacyPoints < prompt.vetoDpCost) {
+      return {
+        state,
+        error: `Diplomatic Veto requires ${prompt.vetoDpCost} Diplomacy Points (DP).`,
+      };
+    }
+    const nextCountries = { ...state.countries };
+    nextCountries[player.id] = {
+      ...player,
+      diplomacyPoints: player.diplomacyPoints - prompt.vetoDpCost,
+      truceWith: { ...player.truceWith, [attacker.id]: 4 },
+    };
+    nextCountries[attacker.id] = {
+      ...attacker,
+      truceWith: { ...attacker.truceWith, [player.id]: 4 },
+    };
+    return {
+      state: grantCommanderXp(
+        {
+          ...state,
+          countries: nextCountries,
+          pendingWarPrompt: null,
+          chronicle: [
+            {
+              id: `chr_veto_${state.totalDays}_${Date.now()}`,
+              turn: state.turn,
+              day: state.day,
+              year: state.year,
+              monthIndex: state.monthIndex,
+              type: 'peace' as const,
+              title: lang === 'pl' ? 'Weto Dyplomatyczne' : 'Diplomatic Veto Enforced',
+              detail: `${player.displayName} averted war with ${attacker.displayName} (4-mo truce).`,
+              countryIds: [player.id, attacker.id],
+            },
+            ...state.chronicle,
+          ].slice(0, 120),
+        },
+        15,
+        'Diplomatic Veto',
+      ),
+    };
+  }
+
+  // Player accepted war: formalize state of war & trigger Article 5 collective defense for defender's allies
+  const nextCountries = cloneState(state).countries;
+  const p = nextCountries[player.id];
+  const a = nextCountries[attacker.id];
+  const nextChronicle = [...state.chronicle];
+  const nextNotifications = [...state.notifications];
+
+  if (!p.atWarWith.includes(a.id)) p.atWarWith.push(a.id);
+  if (!a.atWarWith.includes(p.id)) a.atWarWith.push(p.id);
+  p.relations = { ...p.relations, [a.id]: -100 };
+  a.relations = { ...a.relations, [p.id]: -100 };
+
+  triggerArticle5AndBreakPacts(state, nextCountries, a.id, p.id, lang, nextChronicle, nextNotifications);
+
+  nextChronicle.unshift({
+    id: `chr_war_acc_${state.totalDays}_${Date.now()}`,
+    turn: state.turn,
+    day: state.day,
+    year: state.year,
+    monthIndex: state.monthIndex,
+    type: 'war',
+    title: lang === 'pl' ? 'Wybuch Wojny' : 'War Accepted',
+    detail: `${a.displayName} ⚔️ ${p.displayName}`,
+    countryIds: [a.id, p.id],
+  });
+
+  return {
+    state: {
+      ...state,
+      countries: nextCountries,
+      pendingWarPrompt: null,
+      chronicle: nextChronicle.slice(0, 120),
+      notifications: nextNotifications.slice(0, 10),
+    },
+  };
+}
+
+export function adjustRelations(
+  state: GameState,
+  targetCountryId: string,
+  direction: 'improve' | 'insult',
+  lang: Language = 'en',
+): { state: GameState; error?: string } {
+  const player = state.countries[state.playerCountryId];
+  const target = state.countries[targetCountryId];
+  if (!player || !target || target.id === player.id) {
+    return { state, error: 'Invalid target nation.' };
+  }
+  if (player.diplomacyPoints < 1) {
+    return { state, error: 'Requires 1 Diplomacy Point (DP).' };
+  }
+
+  const delta = direction === 'improve' ? 18 : -24;
+  const curRel = player.relations?.[target.id] ?? 0;
+  const nextRel = Math.max(-100, Math.min(100, curRel + delta));
+
+  return {
+    state: grantCommanderXp(
+      {
+        ...state,
+        countries: {
+          ...state.countries,
+          [player.id]: {
+            ...player,
+            diplomacyPoints: player.diplomacyPoints - 1,
+            relations: { ...player.relations, [target.id]: nextRel },
+          },
+          [target.id]: {
+            ...target,
+            relations: { ...target.relations, [player.id]: nextRel },
+          },
+        },
+        notifications: [
+          {
+            id: `notif_rel_${Date.now()}`,
+            type: direction === 'improve' ? ('alliance' as const) : ('war' as const),
+            title:
+              direction === 'improve'
+                ? lang === 'pl'
+                  ? 'Poprawiono Relacje'
+                  : 'Relations Improved'
+                : lang === 'pl'
+                ? 'Zniewaga Dyplomatyczna'
+                : 'Diplomatic Insult Sent',
+            message: `${target.displayName}: ${curRel} → ${nextRel}`,
+            createdAt: Date.now(),
+          },
+          ...state.notifications,
+        ].slice(0, 10),
+      },
+      10,
+      direction === 'improve' ? 'Improved Relations' : 'Diplomatic Insult',
+    ),
+  };
+}
+
+export function proposeExtendedDiplomacy(
+  state: GameState,
+  targetCountryId: string,
+  action: 'guarantee' | 'sanctions' | 'lend_lease',
+  lang: Language = 'en',
+): { state: GameState; error?: string } {
+  const player = state.countries[state.playerCountryId];
+  const target = state.countries[targetCountryId];
+  if (!player || !target || target.id === player.id || target.eliminated) {
+    return { state, error: 'Invalid target nation.' };
+  }
+  if (player.diplomacyPoints < 1) return { state, error: 'Requires 1 Diplomacy Point (DP).' };
+
+  const now = Date.now();
+  const nextCountries = { ...state.countries };
+
+  if (action === 'guarantee') {
+    const active = player.guarantees?.includes(target.id);
+    nextCountries[player.id] = {
+      ...player,
+      diplomacyPoints: player.diplomacyPoints - 1,
+      guarantees: active
+        ? player.guarantees.filter((id) => id !== target.id)
+        : [...(player.guarantees ?? []), target.id],
+      relations: { ...player.relations, [target.id]: Math.min(100, (player.relations?.[target.id] ?? 0) + (active ? -10 : 20)) },
+    };
+  } else if (action === 'sanctions') {
+    const already = target.sanctionedBy?.includes(player.id);
+    nextCountries[player.id] = {
+      ...player,
+      diplomacyPoints: player.diplomacyPoints - 1,
+      relations: { ...player.relations, [target.id]: Math.max(-100, (player.relations?.[target.id] ?? 0) - 25) },
+    };
+    nextCountries[target.id] = {
+      ...target,
+      sanctionedBy: already
+        ? target.sanctionedBy.filter((id) => id !== player.id)
+        : [...(target.sanctionedBy ?? []), player.id],
+    };
+  } else if (action === 'lend_lease') {
+    if (player.treasury < 20) return { state, error: 'Lend-Lease package requires 20 PLN.' };
+    nextCountries[player.id] = {
+      ...player,
+      diplomacyPoints: player.diplomacyPoints - 1,
+      treasury: Number((player.treasury - 20).toFixed(1)),
+      lendLeaseTo: player.lendLeaseTo?.includes(target.id)
+        ? player.lendLeaseTo
+        : [...(player.lendLeaseTo ?? []), target.id],
+      relations: { ...player.relations, [target.id]: Math.min(100, (player.relations?.[target.id] ?? 0) + 25) },
+    };
+    nextCountries[target.id] = {
+      ...target,
+      treasury: Number((target.treasury + 20).toFixed(1)),
+      manpower: Math.min(target.maxManpower, target.manpower + 8000),
+      relations: { ...target.relations, [player.id]: Math.min(100, (target.relations?.[player.id] ?? 0) + 25) },
+    };
+  }
+
+  return {
+    state: grantCommanderXp(
+      {
+        ...state,
+        countries: nextCountries,
+        notifications: [
+          {
+            id: `notif_ext_${now}`,
+            type: 'info' as const,
+            title:
+              action === 'guarantee'
+                ? lang === 'pl'
+                  ? 'Gwarancja Niepodległości'
+                  : 'Independence Guaranteed'
+                : action === 'sanctions'
+                ? lang === 'pl'
+                  ? 'Nałożono Sankcje'
+                  : 'Economic Sanctions Enacted'
+                : lang === 'pl'
+                ? 'Pakiet Lend-Lease'
+                : 'Lend-Lease Delivered',
+            message: `${target.displayName}`,
+            createdAt: now,
+          },
+          ...state.notifications,
+        ].slice(0, 10),
+      },
+      15,
+      `Diplomacy: ${action}`,
+    ),
+  };
+}
+
+export function setVassalTribute(
+  state: GameState,
+  vassalId: string,
+  tributePct: number,
+): { state: GameState; error?: string } {
+  const player = state.countries[state.playerCountryId];
+  const vassal = state.countries[vassalId];
+  if (!player || !vassal || vassal.vassalOf !== player.id) {
+    return { state, error: 'Target nation is not your vassal.' };
+  }
+  const clamped = Math.max(0, Math.min(45, Math.round(tributePct)));
+  return {
+    state: {
+      ...state,
+      countries: {
+        ...state.countries,
+        [vassal.id]: {
+          ...vassal,
+          vassalTributePct: clamped,
+        },
+      },
+    },
+  };
+}
+
+export function resolvePeaceConference(
+  state: GameState,
+  draft: PeaceTreatyDraft,
+  lang: Language = 'en',
+): { state: GameState; error?: string } {
+  const player = state.countries[state.playerCountryId];
+  const enemy = state.countries[draft.enemyId];
+  if (!player || !enemy || !player.atWarWith.includes(enemy.id)) {
+    return { state, error: 'You are not at war with this nation.' };
+  }
+  if (player.diplomacyPoints < 1) {
+    return { state, error: 'Requires 1 Diplomacy Point (DP).' };
+  }
+
+  const summaries = computeCountrySummaries(state);
+  const myScore = summaries[player.id]?.powerScore ?? 1000;
+  const enemyScore = Math.max(1000, summaries[enemy.id]?.powerScore ?? 1000);
+  const scoreRatio = myScore / enemyScore;
+
+  const treatyCost =
+    draft.demandedProvinceIds.length * 0.45 +
+    (draft.warReparations ? 0.5 : 0) +
+    (draft.demilitarize ? 0.5 : 0) +
+    (draft.forceVassalize ? 1.4 : 0);
+
+  if (treatyCost > scoreRatio * 1.45 && treatyCost > 0.6) {
+    return {
+      state,
+      error: `${enemy.displayName} rejected peace conference demands — reduce territorial claims or defeat more armies.`,
+    };
+  }
+
+  const nextProvs = { ...state.provinces };
+  for (const pid of draft.demandedProvinceIds) {
+    const prov = nextProvs[pid];
+    if (prov && prov.ownerId === enemy.id) {
+      nextProvs[pid] = {
+        ...prov,
+        ownerId: player.id,
+        assimilated: prov.originalCountryId === player.id,
+        assimilationProgress: prov.originalCountryId === player.id ? 100 : 18,
+      };
+    }
+  }
+
+  const repAmount = draft.warReparations ? Math.min(enemy.treasury, Math.round(25 + draft.demandedProvinceIds.length * 4)) : 0;
+  if (draft.demilitarize) {
+    for (const p of Object.values(nextProvs)) {
+      if (p.ownerId === enemy.id) {
+        nextProvs[p.id] = { ...p, units: scaleUnits(p.units, 0.35) };
+      }
+    }
+  }
+
+  const nextCountries = { ...state.countries };
+  nextCountries[player.id] = {
+    ...player,
+    diplomacyPoints: player.diplomacyPoints - 1,
+    treasury: Number((player.treasury + repAmount).toFixed(1)),
+    atWarWith: player.atWarWith.filter((id) => id !== enemy.id),
+    truceWith: { ...player.truceWith, [enemy.id]: 6 },
+    vassals: draft.forceVassalize && !player.vassals.includes(enemy.id) ? [...player.vassals, enemy.id] : player.vassals,
+    legacyPoints: (player.legacyPoints ?? 0) + 20,
+  };
+  nextCountries[enemy.id] = {
+    ...enemy,
+    treasury: Math.max(0, Number((enemy.treasury - repAmount).toFixed(1))),
+    atWarWith: enemy.atWarWith.filter((id) => id !== player.id),
+    truceWith: { ...enemy.truceWith, [player.id]: 6 },
+    vassalOf: draft.forceVassalize ? player.id : enemy.vassalOf,
+  };
+
+  const now = Date.now();
+  return {
+    state: grantCommanderXp(
+      {
+        ...state,
+        provinces: nextProvs,
+        countries: nextCountries,
+        chronicle: [
+          {
+            id: `chr_pconf_${state.totalDays}_${now}`,
+            turn: state.turn,
+            day: state.day,
+            year: state.year,
+            monthIndex: state.monthIndex,
+            type: 'peace' as const,
+            title: lang === 'pl' ? 'Konferencja Pokojowa' : 'Peace Conference Signed',
+            detail: `${player.displayName} 🕊️ ${enemy.displayName} (+${draft.demandedProvinceIds.length} provs)`,
+            countryIds: [player.id, enemy.id],
+          },
+          ...state.chronicle,
+        ].slice(0, 120),
+        notifications: [
+          {
+            id: `notif_pconf_${now}`,
+            type: 'peace' as const,
+            title: lang === 'pl' ? 'Traktat Konferencji Pokojowej' : 'Peace Conference Concluded',
+            message: `${enemy.displayName} signed treaty (${draft.demandedProvinceIds.length} provinces ceded).`,
+            createdAt: now,
+          },
+          ...state.notifications,
+        ].slice(0, 10),
+      },
+      45,
+      'Peace Conference Treaty',
+    ),
+  };
+}
+
+export function updateBudgetSliders(
+  state: GameState,
+  sliders: Partial<BudgetSliders>,
+): GameState {
+  const player = state.countries[state.playerCountryId];
+  if (!player) return state;
+  const cur = player.budgetSliders ?? {
+    taxRate: player.taxRate,
+    goodsSpending: 8,
+    investmentsSpending: 6,
+    researchSpending: 8,
+    militarySpending: 100,
+  };
+  const next: BudgetSliders = {
+    taxRate: Math.max(5, Math.min(40, Math.round(sliders.taxRate ?? cur.taxRate))),
+    goodsSpending: Math.max(0, Math.min(30, Math.round(sliders.goodsSpending ?? cur.goodsSpending))),
+    investmentsSpending: Math.max(0, Math.min(30, Math.round(sliders.investmentsSpending ?? cur.investmentsSpending))),
+    researchSpending: Math.max(0, Math.min(30, Math.round(sliders.researchSpending ?? cur.researchSpending))),
+    militarySpending: Math.max(50, Math.min(150, Math.round(sliders.militarySpending ?? cur.militarySpending))),
+  };
+  return {
+    ...state,
+    countries: {
+      ...state.countries,
+      [player.id]: {
+        ...player,
+        taxRate: next.taxRate,
+        budgetSliders: next,
+      },
+    },
+  };
+}
+
+export function developProvince(
+  state: GameState,
+  provinceId: string,
+  lang: Language = 'en',
+): { state: GameState; error?: string } {
+  const player = state.countries[state.playerCountryId];
+  const prov = state.provinces[provinceId];
+  if (!player || !prov || prov.ownerId !== player.id) {
+    return { state, error: 'You do not control this province.' };
+  }
+  const cost = 12;
+  if (player.treasury < cost) return { state, error: `Requires ${cost} PLN.` };
+  if (player.movementPoints < 1) return { state, error: 'Requires 1 Movement Point.' };
+
+  return {
+    state: grantCommanderXp(
+      {
+        ...state,
+        countries: {
+          ...state.countries,
+          [player.id]: {
+            ...player,
+            treasury: Number((player.treasury - cost).toFixed(1)),
+            movementPoints: player.movementPoints - 1,
+          },
+        },
+        provinces: {
+          ...state.provinces,
+          [prov.id]: {
+            ...prov,
+            development: Number(((prov.development ?? 1) + 0.5).toFixed(2)),
+            economy: Number((prov.economy + 0.45).toFixed(2)),
+            happiness: Math.min(100, (prov.happiness ?? 75) + 4),
+          },
+        },
+        mapPulses: [
+          {
+            id: `pulse_dev_${Date.now()}`,
+            kind: 'recruit' as const,
+            centroid: prov.centroid,
+            color: '#FBBF24',
+            label: lang === 'pl' ? '+ROZWÓJ' : '+DEV',
+            createdAt: Date.now(),
+          },
+          ...(state.mapPulses ?? []),
+        ].slice(0, 14),
+      },
+      15,
+      `Developed ${prov.name}`,
+    ),
+  };
+}
+
+export function plunderProvince(
+  state: GameState,
+  provinceId: string,
+  lang: Language = 'en',
+): { state: GameState; error?: string } {
+  const player = state.countries[state.playerCountryId];
+  const prov = state.provinces[provinceId];
+  if (!player || !prov || prov.ownerId !== player.id) {
+    return { state, error: 'Occupy the province before plundering it.' };
+  }
+  if (prov.assimilated) {
+    return { state, error: 'Cannot plunder assimilated core territory!' };
+  }
+  if ((prov.plunderCooldownDay ?? -100) + 30 > state.totalDays) {
+    return { state, error: 'Province was recently plundered.' };
+  }
+
+  const loot = Number(Math.max(8, Math.min(45, prov.economy * 5.2)).toFixed(1));
+  return {
+    state: grantCommanderXp(
+      {
+        ...state,
+        countries: {
+          ...state.countries,
+          [player.id]: {
+            ...player,
+            treasury: Number((player.treasury + loot).toFixed(1)),
+            stability: Math.max(15, player.stability - 2),
+          },
+        },
+        provinces: {
+          ...state.provinces,
+          [prov.id]: {
+            ...prov,
+            economy: Math.max(0.5, Number((prov.economy * 0.78).toFixed(2))),
+            happiness: Math.max(10, (prov.happiness ?? 65) - 25),
+            plunderCooldownDay: state.totalDays,
+          },
+        },
+        chronicle: [
+          {
+            id: `chr_plunder_${state.totalDays}_${Date.now()}`,
+            turn: state.turn,
+            day: state.day,
+            year: state.year,
+            monthIndex: state.monthIndex,
+            type: 'war' as const,
+            title: lang === 'pl' ? 'Złupiono Prowincję' : 'Province Plundered',
+            detail: `${player.displayName} seized ${loot} PLN from ${prov.name}.`,
+            countryIds: [player.id],
+          },
+          ...state.chronicle,
+        ].slice(0, 120),
+      },
+      12,
+      `Plundered ${prov.name}`,
+    ),
+  };
+}
+
+export function sendMissionaries(
+  state: GameState,
+  provinceId: string,
+  lang: Language = 'en',
+): { state: GameState; error?: string } {
+  const player = state.countries[state.playerCountryId];
+  const prov = state.provinces[provinceId];
+  if (!player || !prov || prov.ownerId !== player.id) {
+    return { state, error: 'You do not control this province.' };
+  }
+  if (player.treasury < 10) return { state, error: 'Requires 10 PLN.' };
+
+  const nextAdh = prov.religion === player.religion ? Math.min(100, (prov.religionAdherence ?? 60) + 25) : 55;
+  return {
+    state: grantCommanderXp(
+      {
+        ...state,
+        countries: {
+          ...state.countries,
+          [player.id]: {
+            ...player,
+            treasury: Number((player.treasury - 10).toFixed(1)),
+          },
+        },
+        provinces: {
+          ...state.provinces,
+          [prov.id]: {
+            ...prov,
+            religion: player.religion,
+            religionAdherence: nextAdh,
+            happiness: Math.min(100, (prov.happiness ?? 70) + 3),
+          },
+        },
+        notifications: [
+          {
+            id: `notif_miss_${Date.now()}`,
+            type: 'info' as const,
+            title: lang === 'pl' ? 'Misjonarze Wysłani' : 'Missionaries Deployed',
+            message: `${prov.name}: ${nextAdh}% conversion progress.`,
+            createdAt: Date.now(),
+          },
+          ...state.notifications,
+        ].slice(0, 10),
+      },
+      12,
+      `Missionaries in ${prov.name}`,
+    ),
+  };
+}
+
+export function resurrectAncientFaith(
+  state: GameState,
+  religionId: ReligionId,
+  lang: Language = 'en',
+): { state: GameState; error?: string } {
+  const player = state.countries[state.playerCountryId];
+  if (!player) return { state, error: 'No active player nation.' };
+  const decision = ANCIENT_FAITH_DECISIONS.find((d) => d.religionId === religionId);
+  if (!decision) return { state, error: 'Unknown ancient faith.' };
+  if (player.resurrectedFaithId === religionId) return { state, error: 'Ancient faith already adopted!' };
+  if (player.treasury < decision.costPln) return { state, error: `Requires ${decision.costPln} PLN.` };
+  if (player.diplomacyPoints < decision.costDp) return { state, error: `Requires ${decision.costDp} DP.` };
+
+  const nextProvs = { ...state.provinces };
+  for (const p of Object.values(nextProvs)) {
+    if (p.ownerId === player.id) {
+      nextProvs[p.id] = {
+        ...p,
+        religion: religionId,
+        religionAdherence: p.isCapital ? 92 : 76,
+      };
+    }
+  }
+
+  return {
+    state: grantCommanderXp(
+      {
+        ...state,
+        provinces: nextProvs,
+        countries: {
+          ...state.countries,
+          [player.id]: {
+            ...player,
+            treasury: Number((player.treasury - decision.costPln).toFixed(1)),
+            diplomacyPoints: player.diplomacyPoints - decision.costDp,
+            religion: religionId,
+            religionAdherence: 88,
+            resurrectedFaithId: religionId,
+            stability: Math.min(100, player.stability + 8),
+            legacyPoints: (player.legacyPoints ?? 0) + (religionId === 'roman_pantheon' ? 50 : 25),
+          },
+        },
+        chronicle: [
+          {
+            id: `chr_faith_${state.totalDays}_${Date.now()}`,
+            turn: state.turn,
+            day: state.day,
+            year: state.year,
+            monthIndex: state.monthIndex,
+            type: 'event' as const,
+            title: decision.name[lang],
+            detail: `${player.displayName} revived an ancient civilization faith!`,
+            countryIds: [player.id],
+          },
+          ...state.chronicle,
+        ].slice(0, 120),
+      },
+      60,
+      decision.name.en,
+    ),
+  };
+}
+
+export function reformHistoricEmpire(
+  state: GameState,
+  empireId: string,
+  lang: Language = 'en',
+): { state: GameState; error?: string } {
+  const player = state.countries[state.playerCountryId];
+  if (!player) return { state, error: 'No active player nation.' };
+  const def = REFORMABLE_EMPIRES.find((e) => e.id === empireId);
+  if (!def) return { state, error: 'Unknown historic empire.' };
+  if (player.reformedEmpireId === empireId) return { state, error: 'Empire already proclaimed!' };
+  const ownedCount = Object.values(state.provinces).filter((p) => p.ownerId === player.id).length;
+  if (ownedCount < def.requiredProvincesOwned) {
+    return {
+      state,
+      error: `Requires controlling at least ${def.requiredProvincesOwned} provinces (you have ${ownedCount}).`,
+    };
+  }
+  if (player.treasury < def.costPln) return { state, error: `Requires ${def.costPln} PLN.` };
+  if (player.diplomacyPoints < def.costDp) return { state, error: `Requires ${def.costDp} DP.` };
+
+  return {
+    state: grantCommanderXp(
+      {
+        ...state,
+        countries: {
+          ...state.countries,
+          [player.id]: {
+            ...player,
+            displayName: def.name[lang].replace(/^(Form|Restore|Reform|Unite|Proclaim|Odtwórz|Ogłoś|Przywróć|Zjednocz)\s+/i, ''),
+            color: def.newColorHex,
+            treasury: Number((player.treasury - def.costPln).toFixed(1)),
+            diplomacyPoints: player.diplomacyPoints - def.costDp,
+            stability: Math.min(100, player.stability + 15),
+            manpower: Math.min(player.maxManpower, player.manpower + 55000),
+            legacyPoints: (player.legacyPoints ?? 0) + 100,
+            reformedEmpireId: empireId,
+          },
+        },
+        chronicle: [
+          {
+            id: `chr_emp_${state.totalDays}_${Date.now()}`,
+            turn: state.turn,
+            day: state.day,
+            year: state.year,
+            monthIndex: state.monthIndex,
+            type: 'event' as const,
+            title: def.name[lang],
+            detail: `${player.displayName} proclaimed a grand historic empire!`,
+            countryIds: [player.id],
+          },
+          ...state.chronicle,
+        ].slice(0, 120),
+      },
+      120,
+      def.name.en,
+    ),
+  };
+}
+
+export function recruitGeneral(
+  state: GameState,
+  specialty: MilitaryGeneral['specialty'],
+  lang: Language = 'en',
+): { state: GameState; error?: string } {
+  const player = state.countries[state.playerCountryId];
+  if (!player) return { state, error: 'No active player nation.' };
+  const cost = 22;
+  if (player.treasury < cost) return { state, error: `Commissioning a general requires ${cost} PLN.` };
+
+  const gen = generateGeneralForCountry(player.id, specialty, (player.generals?.length ?? 0) + state.turn);
+  return {
+    state: grantCommanderXp(
+      {
+        ...state,
+        countries: {
+          ...state.countries,
+          [player.id]: {
+            ...player,
+            treasury: Number((player.treasury - cost).toFixed(1)),
+            generals: [...(player.generals ?? []), gen],
+          },
+        },
+        notifications: [
+          {
+            id: `notif_gen_${Date.now()}`,
+            type: 'info' as const,
+            title: lang === 'pl' ? 'Mianowano Generała' : 'General Commissioned',
+            message: `${gen.name} (${specialty.toUpperCase()} Lv.1)`,
+            createdAt: Date.now(),
+          },
+          ...state.notifications,
+        ].slice(0, 10),
+      },
+      18,
+      `Commissioned ${gen.name}`,
+    ),
+  };
+}
+
+export function unlockLegacyPerk(
+  state: GameState,
+  perkId: string,
+  lang: Language = 'en',
+): { state: GameState; error?: string } {
+  const player = state.countries[state.playerCountryId];
+  if (!player) return { state, error: 'No active player nation.' };
+  const def = CIVILIZATION_LEGACY_PERKS.find((p) => p.id === perkId);
+  if (!def) return { state, error: 'Unknown legacy perk.' };
+  if (player.unlockedLegacyPerks?.includes(perkId)) return { state, error: 'Legacy perk already unlocked.' };
+  if ((player.legacyPoints ?? 0) < def.costLegacy) {
+    return { state, error: `Requires ${def.costLegacy} Civilization Legacy Points.` };
+  }
+
+  return {
+    state: grantCommanderXp(
+      {
+        ...state,
+        countries: {
+          ...state.countries,
+          [player.id]: {
+            ...player,
+            legacyPoints: (player.legacyPoints ?? 0) - def.costLegacy,
+            unlockedLegacyPerks: [...(player.unlockedLegacyPerks ?? []), perkId],
+            stability: perkId === 'leg_civic_harmony' ? Math.min(100, player.stability + 6) : player.stability,
+          },
+        },
+        notifications: [
+          {
+            id: `notif_leg_${Date.now()}`,
+            type: 'info' as const,
+            title: lang === 'pl' ? 'Odblokowano Dziedzictwo' : 'Legacy Perk Unlocked',
+            message: def.name[lang],
+            createdAt: Date.now(),
+          },
+          ...state.notifications,
+        ].slice(0, 10),
+      },
+      30,
+      `Legacy: ${def.name.en}`,
+    ),
+  };
 }

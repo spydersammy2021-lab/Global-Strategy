@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  Award,
   Bot,
   CloudFog,
   CloudRain,
@@ -8,9 +9,11 @@ import {
   Cpu,
   Flame,
   FlaskConical,
+  FolderOpen,
   Globe2,
   HelpCircle,
   Home,
+  Layers,
   Map as MapIcon,
   Pause,
   Plane,
@@ -22,7 +25,6 @@ import {
   Sun,
   Swords,
   Thermometer,
-  TrainFront,
   Trophy,
   UserPlus,
   Volume2,
@@ -41,7 +43,14 @@ import type {
   UiMode,
   WeatherKind,
 } from '../game/types';
-import { MONTHS, SEASON_NAMES, WEATHER_NAMES, type Translations } from '../i18n/translations';
+import {
+  COMMANDER_RANK_NAMES,
+  MONTHS,
+  SEASON_NAMES,
+  UI_MODE_TEXT,
+  WEATHER_NAMES,
+  type Translations,
+} from '../i18n/translations';
 import { AvatarIcon } from './BlocksLogo';
 import { FlagBadge } from './FlagBadge';
 
@@ -59,6 +68,7 @@ function WeatherIcon({ weather }: { weather: WeatherKind }) {
 }
 
 const SPEED_OPTIONS: SimSpeed[] = [1, 2, 3, 5];
+const UI_MODE_ORDER: UiMode[] = ['very_easy', 'easy', 'hard', 'extended', 'ultra_realistic'];
 
 export function TopHudBar({
   gameState,
@@ -140,6 +150,22 @@ export function TopHudBar({
       ? 'border-amber-500/50 bg-amber-950/60 text-amber-300'
       : 'border-sky-500/40 bg-slate-950/85 text-sky-300';
 
+  const commanderLevel = gameState.commanderLevel ?? 1;
+  const commanderXp = gameState.commanderXp ?? 0;
+  const rankId = gameState.commanderRankId ?? 'cadet';
+  const rankLabel = COMMANDER_RANK_NAMES[lang][rankId];
+  const curBaseXp = Math.pow(commanderLevel - 1, 2) * 55;
+  const nextLvlXp = Math.pow(commanderLevel, 2) * 55;
+  const xpProgressPct = Math.min(
+    100,
+    Math.max(6, Math.round(((commanderXp - curBaseXp) / Math.max(1, nextLvlXp - curBaseXp)) * 100)),
+  );
+
+  const totalPlayableProvs = Object.keys(gameState.provinces).length;
+  const ownedProvsCount = summary?.provinceCount ?? 0;
+  const conquestPct =
+    totalPlayableProvs > 0 ? ((ownedProvsCount / totalPlayableProvs) * 100).toFixed(1) : '0.0';
+
   const tierLabel =
     effectiveTier === 'ultra'
       ? 'ULTRA'
@@ -150,6 +176,17 @@ export function TopHudBar({
       : lang === 'en'
       ? 'LOW'
       : 'LEK';
+
+  const mapModes: Array<{ id: MapOverlayMode; label: string }> = [
+    { id: 'political', label: `🌍 ${t.politicalView}` },
+    { id: 'thermal', label: `🌡️ ${t.thermalView}` },
+    { id: 'religions', label: `🛐 ${t.mapModeReligions}` },
+    { id: 'cultures', label: `🎭 ${t.mapModeCultures}` },
+    { id: 'economy', label: `💰 ${t.mapModeEconomy}` },
+    { id: 'resources', label: `⛏️ ${t.mapModeResources}` },
+    { id: 'diplomacy', label: `🤝 ${t.mapModeDiplomacy}` },
+    { id: 'logistics', label: `🚆 ${t.logisticsView}` },
+  ];
 
   return (
     <div className="pointer-events-auto relative z-30 hidden md:flex flex-col">
@@ -169,7 +206,7 @@ export function TopHudBar({
       )}
 
       <header className="flex flex-nowrap items-center justify-between gap-1.5 px-2 py-1 border-b aoh-hud-bar overflow-hidden">
-        {/* TOP-LEFT: Imperial Framed Flag + Resource Telemetry */}
+        {/* TOP-LEFT: Imperial Framed Flag + Commander XP + Conquest% + Telemetry */}
         <div className="flex items-center gap-2 min-w-0 shrink-0">
           {playerCountry && summary ? (
             <button
@@ -189,8 +226,31 @@ export function TopHudBar({
           {playerCountry && summary ? (
             <div className="flex flex-col min-w-0 shrink-0">
               <div className="flex items-center gap-1.5 min-w-0">
-                <span className="font-display text-xs font-extrabold text-white truncate max-w-[110px]">
+                <span className="font-display text-xs font-extrabold text-white truncate max-w-[105px]">
                   {playerCountry.displayName}
+                </span>
+                <span
+                  data-testid="commander-rank-badge"
+                  title={`${t.commanderXpLabel}: ${commanderXp} XP (${rankLabel})`}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-amber-400/45 bg-amber-500/15 text-[9.5px] font-mono-num font-bold text-amber-200 whitespace-nowrap"
+                >
+                  <Award size={9} className="text-amber-300 shrink-0" />
+                  <span>Lv.{commanderLevel}</span>
+                  <span className="hidden 2xl:inline text-amber-300/90">· {rankLabel}</span>
+                  <span className="hidden 2xl:inline-block w-7 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                    <span
+                      className="block h-full bg-amber-400"
+                      style={{ width: `${xpProgressPct}%` }}
+                    />
+                  </span>
+                </span>
+                <span
+                  data-testid="world-conquest-progress"
+                  title={`${t.worldConquestProgressLabel}: ${ownedProvsCount}/${totalPlayableProvs}`}
+                  className="inline-flex items-center gap-0.5 text-[10px] font-mono-num font-bold text-cyan-300 whitespace-nowrap"
+                >
+                  <Globe2 size={10} className="text-cyan-400" />
+                  {conquestPct}%
                 </span>
                 <span className="hidden 2xl:inline-flex items-center gap-1 text-[10px] font-mono-num text-slate-400 whitespace-nowrap">
                   <MapIcon size={10} className="text-amber-400" />
@@ -274,52 +334,37 @@ export function TopHudBar({
           )}
         </div>
 
-        {/* TOP-RIGHT: Map Views + Warming + Auto-Pilot & 5s Countdown + Clock + Uncapped FPS + Tools */}
+        {/* TOP-RIGHT: 8 Map Views + Warming + Smart Auto-Pilot + Clock + Uncapped FPS + Load/Save + Tools */}
         <div className="flex flex-nowrap items-center gap-1 shrink-0 justify-end">
-          {/* Map View Mode Switcher (Political / Thermal °C / Rail & Trade) */}
+          {/* 8-Mode Map Overlay Selector + Quick Thermal Toggle */}
           {onChangeMapOverlay && (
-            <div className="flex items-center rounded-lg border border-slate-800 bg-slate-950/90 p-0.5 text-[10px] font-bold">
-              <button
-                type="button"
-                data-testid="map-overlay-political"
-                onClick={() => onChangeMapOverlay('political')}
-                title={t.politicalView}
-                className={`inline-flex items-center gap-1 px-1.5 py-1 rounded cursor-pointer whitespace-nowrap ${
-                  mapOverlayMode === 'political'
-                    ? 'bg-amber-400 text-slate-950'
-                    : 'text-slate-300 hover:text-white'
-                }`}
+            <div className="flex items-center gap-0.5 rounded-lg border border-slate-800 bg-slate-950/95 p-0.5">
+              <Layers size={11} className="text-amber-400 ml-1 shrink-0" />
+              <select
+                data-testid="map-overlay-select"
+                aria-label="Map View Mode"
+                value={mapOverlayMode}
+                onChange={(e) => onChangeMapOverlay(e.target.value as MapOverlayMode)}
+                className="bg-transparent text-[10px] font-bold text-slate-100 px-1 py-0.5 focus:outline-none cursor-pointer"
               >
-                <Globe2 size={11} />
-                <span className="hidden 2xl:inline">{t.politicalView}</span>
-              </button>
+                {mapModes.map((m) => (
+                  <option key={m.id} value={m.id} className="bg-slate-950 text-slate-100">
+                    {m.label}
+                  </option>
+                ))}
+              </select>
               <button
                 type="button"
                 data-testid="map-overlay-thermal"
-                onClick={() => onChangeMapOverlay('thermal')}
+                onClick={() => onChangeMapOverlay(mapOverlayMode === 'thermal' ? 'political' : 'thermal')}
                 title={t.thermalView}
-                className={`inline-flex items-center gap-1 px-1.5 py-1 rounded cursor-pointer whitespace-nowrap ${
+                className={`p-1 rounded cursor-pointer ${
                   mapOverlayMode === 'thermal'
                     ? 'bg-orange-400 text-slate-950'
-                    : 'text-slate-300 hover:text-white'
+                    : 'text-orange-300 hover:bg-slate-800'
                 }`}
               >
                 <Flame size={11} />
-                <span className="hidden 2xl:inline">{t.thermalView}</span>
-              </button>
-              <button
-                type="button"
-                data-testid="map-overlay-logistics"
-                onClick={() => onChangeMapOverlay('logistics')}
-                title={t.logisticsView}
-                className={`inline-flex items-center gap-1 px-1.5 py-1 rounded cursor-pointer whitespace-nowrap ${
-                  mapOverlayMode === 'logistics'
-                    ? 'bg-sky-400 text-slate-950'
-                    : 'text-slate-300 hover:text-white'
-                }`}
-              >
-                <TrainFront size={11} />
-                <span className="hidden 2xl:inline">{t.logisticsView}</span>
               </button>
             </div>
           )}
@@ -334,7 +379,7 @@ export function TopHudBar({
             <span>{warming}</span>
           </div>
 
-          {/* 1-Click Auto-Pilot + 5s War Airlift Countdown */}
+          {/* 1-Click Smart Auto-Pilot + 5s War Airlift Countdown */}
           {!isSpectator && (
             <button
               type="button"
@@ -348,7 +393,10 @@ export function TopHudBar({
               }`}
             >
               <Cpu size={12} className={gameState.autoPilotEnabled ? 'text-cyan-300' : 'text-slate-400'} />
-              <span>{gameState.autoPilotEnabled ? t.autoPilotActive : t.autoPilotToggle}</span>
+              <span className="2xl:hidden">{gameState.autoPilotEnabled ? 'AI ON' : 'Auto'}</span>
+              <span className="hidden 2xl:inline">
+                {gameState.autoPilotEnabled ? t.autoPilotActive : t.autoPilotToggle}
+              </span>
             </button>
           )}
 
@@ -430,19 +478,18 @@ export function TopHudBar({
             </div>
           </div>
 
-          {/* Live UI Mode Cycler */}
+          {/* 5-Mode UI Cycler */}
           <button
             type="button"
             data-testid="hud-uimode-toggle"
             onClick={() => {
-              const next: UiMode =
-                uiMode === 'very_easy' ? 'easy' : uiMode === 'easy' ? 'hard' : 'very_easy';
-              onChangeUiMode(next);
+              const idx = UI_MODE_ORDER.indexOf(uiMode);
+              onChangeUiMode(UI_MODE_ORDER[(idx + 1) % UI_MODE_ORDER.length]);
             }}
             title={t.uiModeLabel}
             className="hidden 2xl:inline-flex items-center px-2 py-1 rounded-lg border border-slate-800 bg-slate-950/90 hover:border-amber-400/60 text-[10px] font-bold text-slate-200 cursor-pointer whitespace-nowrap"
           >
-            {uiMode === 'very_easy' ? t.uiVeryEasy : uiMode === 'easy' ? t.uiEasy : t.uiHard}
+            {UI_MODE_TEXT[lang][uiMode]}
           </button>
 
           {/* Live Uncapped FPS Counter + Cap Readout */}
@@ -470,14 +517,29 @@ export function TopHudBar({
             <Trophy size={14} />
           </button>
 
+          {/* Prominent Load & Save Campaign Pills */}
           <button
             type="button"
+            data-testid="hud-load-btn"
+            onClick={onOpenSaveLoad}
+            aria-label={t.loadGame}
+            title={t.loadGame}
+            className="inline-flex items-center gap-1 px-1.5 py-1 rounded-lg border border-sky-500/40 bg-sky-950/75 hover:border-sky-400 text-[10px] font-bold text-sky-200 cursor-pointer whitespace-nowrap"
+          >
+            <FolderOpen size={12} className="text-sky-300 shrink-0" />
+            <span className="hidden xl:inline">{t.loadSlot}</span>
+          </button>
+
+          <button
+            type="button"
+            data-testid="hud-save-btn"
             onClick={onOpenSaveLoad}
             aria-label={t.saveGame}
             title={t.saveGame}
-            className="p-1.5 rounded-lg border border-slate-800 bg-slate-950/90 hover:border-slate-600 text-slate-300 hover:text-white cursor-pointer"
+            className="inline-flex items-center gap-1 px-1.5 py-1 rounded-lg border border-emerald-500/40 bg-emerald-950/75 hover:border-emerald-400 text-[10px] font-bold text-emerald-200 cursor-pointer whitespace-nowrap"
           >
-            <Save size={14} />
+            <Save size={12} className="text-emerald-300 shrink-0" />
+            <span className="hidden xl:inline">SAVE</span>
           </button>
 
           <button
@@ -516,10 +578,10 @@ export function TopHudBar({
             onClick={onOpenAccount}
             aria-label={account.isGuest ? t.accountBtn : account.nickname}
             title={account.isGuest ? t.accountBtn : account.nickname}
-            className="hidden xl:inline-flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-amber-500/35 bg-slate-950/90 hover:border-amber-400 text-xs font-semibold text-amber-200 whitespace-nowrap cursor-pointer"
+            className="hidden 2xl:inline-flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-amber-500/35 bg-slate-950/90 hover:border-amber-400 text-xs font-semibold text-amber-200 whitespace-nowrap cursor-pointer"
           >
             <AvatarIcon avatarId={account.avatarId} size={13} />
-            <span className="hidden 2xl:inline max-w-[115px] truncate">
+            <span className="max-w-[95px] truncate">
               {account.isGuest ? t.accountBtn : account.nickname}
             </span>
           </button>

@@ -177,9 +177,22 @@ export function computeArmyPower(
 
 function getDefenseMinisterBonus(state: GameState, countryId: string): number {
   const c = state.countries[countryId];
-  if (!c?.cabinet?.defense) return 0;
-  const min = CABINET_MINISTERS.find((m) => m.id === c.cabinet.defense);
-  return min?.attackBonus ?? 0;
+  let bonus = 0;
+  if (c?.cabinet?.defense) {
+    const min = CABINET_MINISTERS.find((m) => m.id === c.cabinet.defense);
+    bonus += min?.attackBonus ?? 0;
+  }
+  if (c?.generals && c.generals.length > 0) {
+    const bestGen = c.generals.reduce((b, g) => (g.attackBonus > b.attackBonus ? g : b), c.generals[0]);
+    bonus += bestGen.attackBonus * (1 + (bestGen.level - 1) * 0.12);
+  }
+  if (c?.unlockedLegacyPerks?.includes('leg_iron_discipline')) bonus += 0.1;
+  if (c?.resurrectedFaithId === 'roman_pantheon') bonus += 0.12;
+  if (c?.reformedEmpireId === 'roman_empire') bonus += 0.2;
+  if (c?.reformedEmpireId === 'great_lechia') bonus += 0.1;
+  const milSlider = c?.budgetSliders?.militarySpending ?? 100;
+  bonus += (milSlider - 100) * 0.0025;
+  return bonus;
 }
 
 export function calculateWinChance(params: {
@@ -322,7 +335,7 @@ export function resolveProvinceBattle(params: {
     'defense',
     defenderMilTech,
     {
-      hasFort,
+      hasFort: hasFort || defenderProvince.buildings.includes('castle'),
       hasCoastalDefense,
       isNavalAssault,
       weather: defenderProvince.weather,
@@ -420,13 +433,19 @@ export function resolveProvinceBattle(params: {
 
 const BUILDING_UPKEEP: Record<string, number> = {
   factory: 0.4,
+  workshop: 0.2,
   farm: 0.2,
   barracks: 0.5,
   port: 0.4,
   fort: 0.6,
+  castle: 0.75,
   university: 0.7,
+  library: 0.3,
   railway: 0.35,
   coastal_defense: 0.5,
+  airbase: 0.8,
+  armory: 0.55,
+  nuclear_reactor: 1.2,
   missile_silo: 1.1,
   spaceport: 1.6,
 };
@@ -448,11 +467,14 @@ function computePreTributeBudget(
     : diff.aiEconomyMult;
 
   const techMult = 1 + (country?.tech.economy ?? 0) * 0.1;
-  const taxMult = (country?.taxRate ?? 18) / 18;
+  const effectiveTaxRate = country?.budgetSliders?.taxRate ?? country?.taxRate ?? 18;
+  const taxMult = effectiveTaxRate / 18;
   const finMin = country?.cabinet?.finance
     ? CABINET_MINISTERS.find((m) => m.id === country.cabinet.finance)
     : undefined;
-  const ministerEconMult = 1 + (finMin?.economyBonus ?? 0);
+  const legacyEcoMult = country?.unlockedLegacyPerks?.includes('leg_merchant_guild') ? 1.15 : 1.0;
+  const empireEcoMult = country?.reformedEmpireId === 'great_lechia' ? 1.2 : 1.0;
+  const ministerEconMult = (1 + (finMin?.economyBonus ?? 0)) * legacyEcoMult * empireEcoMult;
   const ideologyEcoMult =
     country?.ideology === 'technocracy'
       ? 1.08
@@ -473,11 +495,13 @@ function computePreTributeBudget(
 
   for (const prov of ownedProvs) {
     const assimMult = prov.assimilated ? 1.0 : 0.75;
+    const devMult = 1 + Math.max(0, (prov.development ?? 1) - 1) * 0.12;
     const devastationMult = Math.max(0.3, 1 - (prov.nuclearDevastation ?? 0) * 0.007);
     const weatherFarmMult = WEATHER_EFFECTS[prov.weather ?? 'sunny'].farmIncomeMult;
 
     taxIncome +=
       prov.economy *
+      devMult *
       techMult *
       taxMult *
       assimMult *
@@ -490,6 +514,10 @@ function computePreTributeBudget(
 
     if (prov.buildings.includes('factory'))
       factoryAndPortIncome += 4.5 * assimMult * diffMult * ministerEconMult * devastationMult;
+    if (prov.buildings.includes('workshop'))
+      factoryAndPortIncome += 2.6 * assimMult * diffMult * ministerEconMult * devastationMult;
+    if (prov.buildings.includes('nuclear_reactor'))
+      factoryAndPortIncome += 7.2 * assimMult * diffMult * ministerEconMult * devastationMult;
     if (prov.buildings.includes('port')) {
       factoryAndPortIncome += 3.0 * assimMult * diffMult;
       portCount += 1;
@@ -513,26 +541,42 @@ function computePreTributeBudget(
   }
 
   let spaceOceanIncome = 0;
+  const legacySpaceMult = country?.unlockedLegacyPerks?.includes('leg_orbital_ambition') ? 1.3 : 1.0;
   for (const nodeId of country?.spaceColonies ?? []) {
     const node = SPACE_OCEAN_NODES.find((n) => n.id === nodeId);
-    if (node) spaceOceanIncome += node.incomePerMonth;
+    if (node) spaceOceanIncome += node.incomePerMonth * legacySpaceMult;
   }
   if (country?.megaprojects?.includes('transcontinental_rail')) spaceOceanIncome += 18;
   if (country?.megaprojects?.includes('fusion_core')) spaceOceanIncome += 25;
   if (country?.megaprojects?.includes('deep_ocean_arcology')) spaceOceanIncome += 30;
 
   const councilTradeBonus = state.worldCouncil?.passedEffects.includes('res_green_maritime') ? 1.15 : 1.0;
+  const faithTradeBonus = country?.resurrectedFaithId === 'hellenic' ? 1.1 : 1.0;
   const allyBonus = 1 + (country?.allies.length ?? 0) * 0.12;
-  // Maritime Strait Blockade penalty: -35% trade if an enemy country blockades a strategic strait
   const enemyBlockading = Object.values(state.blockadedStraits ?? {}).some(
     (blockerId) => blockerId && blockerId !== countryId && country?.atWarWith.includes(blockerId),
   );
-  const blockadeMult = enemyBlockading ? 0.65 : 1.0;
+  const sanctionPenalty = (country?.sanctionedBy?.length ?? 0) > 0 ? 0.78 : 1.0;
+  const blockadeMult = (enemyBlockading ? 0.65 : 1.0) * sanctionPenalty;
   const convoyBonus = portCount * 1.1;
-  const tradeIncome = (ownedProvs.length * 0.45 + convoyBonus) * allyBonus * diffMult * councilTradeBonus * blockadeMult;
+  const tradeIncome =
+    (ownedProvs.length * 0.45 + convoyBonus) *
+    allyBonus *
+    diffMult *
+    councilTradeBonus *
+    faithTradeBonus *
+    legacyEcoMult *
+    blockadeMult;
 
   const logisticsSave = Math.max(0.75, 1 - (country?.tech.logistics ?? 0) * 0.05);
-  const armyUpkeep = totalArmy * 0.00018 * logisticsSave;
+  const milBudgetMult = (country?.budgetSliders?.militarySpending ?? 100) / 100;
+  const armyUpkeep = totalArmy * 0.00018 * logisticsSave * milBudgetMult;
+  const sliderSpendingUpkeep =
+    ownedProvs.length *
+    (((country?.budgetSliders?.goodsSpending ?? 8) +
+      (country?.budgetSliders?.investmentsSpending ?? 6) +
+      (country?.budgetSliders?.researchSpending ?? 8)) *
+      0.035);
   const loanPayments = (country?.loans ?? []).reduce((s, l) => s + l.perTurnPayment, 0);
   const grossPositive = taxIncome + factoryAndPortIncome + tradeIncome + spaceOceanIncome;
 
@@ -542,7 +586,7 @@ function computePreTributeBudget(
     tradeIncome: Number(tradeIncome.toFixed(1)),
     spaceOceanIncome: Number(spaceOceanIncome.toFixed(1)),
     armyUpkeep: Number(armyUpkeep.toFixed(1)),
-    buildingUpkeep: Number(buildingUpkeep.toFixed(1)),
+    buildingUpkeep: Number((buildingUpkeep + sliderSpendingUpkeep).toFixed(1)),
     loanPayments: Number(loanPayments.toFixed(1)),
     grossPositive,
   };
@@ -559,11 +603,13 @@ export function computeDetailedBudget(state: GameState, countryId: string): Budg
       const vProvs = Object.values(state.provinces).filter((p) => p.ownerId === vId);
       if (vProvs.length === 0) continue;
       const vBase = computePreTributeBudget(state, vId, vProvs);
-      vassalTributeIncome += Math.max(0, vBase.grossPositive * 0.22);
+      const pct = (state.countries[vId]?.vassalTributePct ?? 22) / 100;
+      vassalTributeIncome += Math.max(0, vBase.grossPositive * pct);
     }
   }
 
-  const vassalTributePaid = country?.vassalOf ? Math.max(0, base.grossPositive * 0.22) : 0;
+  const paidPct = (country?.vassalTributePct ?? 22) / 100;
+  const vassalTributePaid = country?.vassalOf ? Math.max(0, base.grossPositive * paidPct) : 0;
 
   const netPerTurn =
     base.taxIncome +
@@ -652,9 +698,11 @@ export function computeCountrySummaries(state: GameState): Record<string, Countr
     let vassalIncome = 0;
     for (const vId of country?.vassals ?? []) {
       const vb = preBudgets[vId];
-      if (vb) vassalIncome += Math.max(0, vb.grossPositive * 0.22);
+      const pct = (state.countries[vId]?.vassalTributePct ?? 22) / 100;
+      if (vb) vassalIncome += Math.max(0, vb.grossPositive * pct);
     }
-    const vassalPaid = country?.vassalOf ? Math.max(0, base.grossPositive * 0.22) : 0;
+    const paidPct = (country?.vassalTributePct ?? 22) / 100;
+    const vassalPaid = country?.vassalOf ? Math.max(0, base.grossPositive * paidPct) : 0;
 
     const net =
       base.taxIncome +

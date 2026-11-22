@@ -2,27 +2,37 @@ import React, { useState } from 'react';
 import {
   Anchor,
   ArrowRight,
+  Atom,
+  BookOpen,
   Building2,
   Castle,
   Check,
   CheckCircle2,
+  Coins,
+  Crown,
   Factory,
   Flame,
   GraduationCap,
+  Hammer,
+  Plane,
   Rocket,
   Satellite,
   Shield,
   ShieldAlert,
+  Sparkles,
   Swords,
   Thermometer,
   TrainFront,
   Trash2,
+  TrendingUp,
   UserPlus,
   Waves,
   Wheat,
+  Wrench,
   X,
 } from 'lucide-react';
 import { getCitiesForProvince } from '../data/cities';
+import { CULTURE_LABELS, RELIGION_LABELS, RESOURCE_LABELS } from '../data/leadersAndDemographics';
 import { SCENARIOS } from '../data/scenarios';
 import { calculateWinChance, getTotalUnits, splitUnitsByRatio } from '../game/combat';
 import { BUILDING_COSTS, getRecruitCost } from '../game/engine';
@@ -33,12 +43,18 @@ import { FlagBadge } from './FlagBadge';
 const BUILDING_LIST: BuildingType[] = [
   'farm',
   'factory',
+  'workshop',
   'barracks',
+  'armory',
   'fort',
+  'castle',
   'university',
+  'library',
   'railway',
   'port',
   'coastal_defense',
+  'airbase',
+  'nuclear_reactor',
   'missile_silo',
   'spaceport',
 ];
@@ -46,25 +62,37 @@ const BUILDING_LIST: BuildingType[] = [
 function BuildingSlotIcon({ type }: { type: BuildingType }) {
   switch (type) {
     case 'factory':
-      return <Factory size={16} className="text-amber-400" />;
+      return <Factory size={15} className="text-amber-400" />;
+    case 'workshop':
+      return <Hammer size={15} className="text-orange-300" />;
     case 'farm':
-      return <Wheat size={16} className="text-emerald-400" />;
+      return <Wheat size={15} className="text-emerald-400" />;
     case 'barracks':
-      return <Swords size={16} className="text-rose-400" />;
+      return <Swords size={15} className="text-rose-400" />;
+    case 'armory':
+      return <Wrench size={15} className="text-red-300" />;
     case 'port':
-      return <Anchor size={16} className="text-sky-400" />;
+      return <Anchor size={15} className="text-sky-400" />;
     case 'fort':
-      return <Castle size={16} className="text-purple-400" />;
+      return <Castle size={15} className="text-purple-400" />;
+    case 'castle':
+      return <Crown size={15} className="text-violet-300" />;
     case 'university':
-      return <GraduationCap size={16} className="text-indigo-400" />;
+      return <GraduationCap size={15} className="text-indigo-400" />;
+    case 'library':
+      return <BookOpen size={15} className="text-teal-300" />;
     case 'railway':
-      return <TrainFront size={16} className="text-yellow-400" />;
+      return <TrainFront size={15} className="text-yellow-400" />;
     case 'coastal_defense':
-      return <Waves size={16} className="text-cyan-400" />;
+      return <Waves size={15} className="text-cyan-400" />;
+    case 'airbase':
+      return <Plane size={15} className="text-sky-300" />;
+    case 'nuclear_reactor':
+      return <Atom size={15} className="text-lime-400" />;
     case 'missile_silo':
-      return <ShieldAlert size={16} className="text-rose-500" />;
+      return <ShieldAlert size={15} className="text-rose-500" />;
     case 'spaceport':
-      return <Rocket size={16} className="text-orange-400" />;
+      return <Rocket size={15} className="text-orange-400" />;
   }
 }
 
@@ -82,6 +110,9 @@ export function BottomProvinceBar({
   onRecruit,
   onAssimilate,
   onReconstructCity,
+  onDevelop,
+  onPlunder,
+  onSendMissionaries,
   onIssueOrder,
   onCancelOrder,
   t,
@@ -100,6 +131,9 @@ export function BottomProvinceBar({
   onRecruit: (provId: string, u: UnitType, count: number) => void;
   onAssimilate: (provId: string) => void;
   onReconstructCity?: (provId: string) => void;
+  onDevelop?: (provId: string) => void;
+  onPlunder?: (provId: string) => void;
+  onSendMissionaries?: (provId: string) => void;
   onIssueOrder: (fromId: string, toId: string, ratio: number) => void;
   onCancelOrder: (orderId: string) => void;
   t: Translations;
@@ -197,16 +231,21 @@ export function BottomProvinceBar({
 
   const defenseRating =
     (prov.buildings.includes('fort') ? 35 : 0) +
+    (prov.buildings.includes('castle') ? 25 : 0) +
     (prov.buildings.includes('coastal_defense') ? 28 : 0);
   const provinceCities = getCitiesForProvince(prov.id, prov.ownerId);
+
+  const relInfo = RELIGION_LABELS[prov.religion ?? player.religion];
+  const culInfo = CULTURE_LABELS[prov.culture ?? player.culture];
+  const resInfo = RESOURCE_LABELS[prov.resource ?? 'coal_steel'];
 
   return (
     <div
       data-testid="bottom-province-bar"
       className={`pointer-events-auto absolute bottom-3 z-20 hidden md:flex flex-col gap-2 transition-all duration-150 ${
         hasLeftDrawerOpen
-          ? 'left-[414px] right-[282px]'
-          : 'left-[64px] right-[282px] max-w-[840px] mx-auto'
+          ? 'left-[452px] right-[282px]'
+          : 'left-[64px] right-[282px] max-w-[900px] mx-auto'
       }`}
     >
       {/* Expandable March & Battle Odds Tray */}
@@ -354,13 +393,13 @@ export function BottomProvinceBar({
         </div>
       )}
 
-      {/* Main Compact V3.0 Bottom Province Inspector Bar */}
+      {/* Main V4.0 Bottom Province Inspector Bar */}
       <div className="rounded-xl border aoh-hud-panel shadow-2xl overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 border-b border-amber-500/20 bg-slate-950/80">
           <div className="flex items-center gap-2.5 min-w-0">
             <FlagBadge flag={player.flag} width={26} height={17} />
             <div className="min-w-0">
-              <div className="flex items-center gap-2 text-xs sm:text-sm font-extrabold text-white">
+              <div className="flex flex-wrap items-center gap-1.5 text-xs sm:text-sm font-extrabold text-white">
                 <span className="truncate">{prov.name}</span>
                 {prov.isCapital && (
                   <span className="text-[11px] font-bold text-amber-400 whitespace-nowrap">
@@ -381,6 +420,44 @@ export function BottomProvinceBar({
                     {t.assimilateBtn}
                   </button>
                 )}
+                {onDevelop && (
+                  <button
+                    type="button"
+                    data-testid="develop-province-btn"
+                    disabled={player.treasury < 12 || player.movementPoints < 1}
+                    onClick={() => onDevelop(prov.id)}
+                    title="Increase Development (+0.5 Dev, +0.45 Eco, 12 PLN)"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/90 hover:bg-amber-400 disabled:opacity-40 text-slate-950 text-[10px] font-bold cursor-pointer whitespace-nowrap"
+                  >
+                    <TrendingUp size={10} />
+                    <span>{t.developProvinceBtn}</span>
+                  </button>
+                )}
+                {onSendMissionaries && (
+                  <button
+                    type="button"
+                    data-testid="missionaries-btn"
+                    disabled={player.treasury < 10}
+                    onClick={() => onSendMissionaries(prov.id)}
+                    title="Send Missionaries (10 PLN)"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-sky-500/20 border border-sky-400/50 hover:bg-sky-500/35 disabled:opacity-40 text-sky-200 text-[10px] font-bold cursor-pointer whitespace-nowrap"
+                  >
+                    <Sparkles size={10} />
+                    <span>{t.missionariesBtn}</span>
+                  </button>
+                )}
+                {!prov.assimilated && onPlunder && (
+                  <button
+                    type="button"
+                    data-testid="plunder-province-btn"
+                    onClick={() => onPlunder(prov.id)}
+                    title="Plunder occupied province for emergency gold"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-600/85 hover:bg-rose-500 text-white text-[10px] font-bold cursor-pointer whitespace-nowrap"
+                  >
+                    <Coins size={10} />
+                    <span>{t.plunderProvinceBtn}</span>
+                  </button>
+                )}
                 {onReconstructCity && (
                   <button
                     type="button"
@@ -395,10 +472,18 @@ export function BottomProvinceBar({
                   </button>
                 )}
               </div>
-              <div className="flex flex-wrap items-center gap-x-2.5 text-[10.5px] font-mono-num text-slate-300">
-                <span>{(prov.population / 1_000_000).toFixed(2)}M pop</span>
+              <div className="flex flex-wrap items-center gap-x-2 text-[10px] font-mono-num text-slate-300 mt-0.5">
+                <span>{(prov.population / 1_000_000).toFixed(2)}M</span>
                 <span className="text-slate-600">·</span>
                 <span className="text-amber-300">Eco {prov.economy.toFixed(1)}</span>
+                <span className="text-slate-600">·</span>
+                <span className="text-emerald-300">Dev {(prov.development ?? 1).toFixed(1)}</span>
+                <span className="text-slate-600">·</span>
+                <span className="text-sky-200">😊 {Math.round(prov.happiness ?? 78)}%</span>
+                <span className="text-slate-600">·</span>
+                <span className="text-purple-200">
+                  Assim {Math.round(prov.assimilationProgress ?? (prov.assimilated ? 100 : 30))}%
+                </span>
                 <span className="text-slate-600">·</span>
                 <span className="inline-flex items-center gap-0.5 text-purple-300">
                   <Shield size={10} /> +{defenseRating}%
@@ -410,6 +495,14 @@ export function BottomProvinceBar({
                   <Thermometer size={10} />
                   {weatherInfo.label} · {tempC}°C
                 </span>
+                <span className="text-slate-600">·</span>
+                <span className="text-amber-200">
+                  {relInfo.name[lang]} ({Math.round(prov.religionAdherence ?? 70)}%)
+                </span>
+                <span className="text-slate-600">·</span>
+                <span className="text-pink-200">{culInfo.name[lang]}</span>
+                <span className="text-slate-600">·</span>
+                <span className="text-lime-300">{resInfo.name[lang]}</span>
                 {hasExtremeClimateRisk && (
                   <span
                     data-testid="climate-attrition-warn"
@@ -460,7 +553,7 @@ export function BottomProvinceBar({
           </div>
         )}
 
-        {/* Bottom Body: Horizontal Row of Square Building Slots + Quick Recruitment & March Actions */}
+        {/* Bottom Body: 16 Square Building Slots + Quick Recruitment & March Actions */}
         <div
           className={`p-2.5 sm:px-3 sm:py-2 flex gap-2.5 ${
             hasLeftDrawerOpen
@@ -471,7 +564,7 @@ export function BottomProvinceBar({
           <div className="flex flex-col gap-1 min-w-0">
             <div className="flex items-center justify-between text-[10px] text-slate-400">
               <span className="font-bold uppercase tracking-wider text-slate-400">
-                {t.buildingsTab}
+                {t.buildingsTab} ({prov.buildings.length}/{BUILDING_LIST.length})
               </span>
               {hoveredBuilding && (
                 <span className="text-amber-200 font-semibold truncate pl-2">
@@ -487,7 +580,9 @@ export function BottomProvinceBar({
                 const blockedByCoast = bType === 'coastal_defense' && prov.seaNeighbors.length === 0;
                 const blockedByTech =
                   (bType === 'missile_silo' && !player.unlockedTechs.includes('mil_missiles')) ||
-                  (bType === 'spaceport' && !player.unlockedTechs.includes('eco_fusion'));
+                  (bType === 'airbase' && !player.unlockedTechs.includes('mil_aerospace')) ||
+                  ((bType === 'spaceport' || bType === 'nuclear_reactor') &&
+                    !player.unlockedTechs.includes('eco_fusion'));
                 const canBuild =
                   !isBuilt &&
                   !blockedByCoast &&

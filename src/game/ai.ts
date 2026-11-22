@@ -1,7 +1,14 @@
 import { TECH_TREE_NODES, canUnlockTechNode } from '../data/techTree';
-import { SCENARIOS, getDifficultyConfig } from '../data/scenarios';
+import {
+  AI_AGGRESSIVENESS_CONFIG,
+  SCENARIOS,
+  getDifficultyConfig,
+  isHardcoreGeopolitics,
+} from '../data/scenarios';
+import { getCountryGraffitiSlogan } from '../data/leadersAndDemographics';
 import {
   addUnits,
+  calculateWinChance,
   computeCountrySummaries,
   getTotalUnits,
   splitUnitsByRatio,
@@ -12,6 +19,7 @@ import type {
   ChronicleEntry,
   GameState,
   Language,
+  PendingWarPrompt,
   ProvinceState,
 } from './types';
 
@@ -21,20 +29,37 @@ function seededRand(seed: number): number {
 }
 
 // Honest, zero-cheat AI: recruits strictly from real treasury & manpower,
-// maneuvers armies with timed marches, unlocks real Tech Tree nodes, and logs chronicle events.
+// maneuvers armies with timed marches, unlocks real Tech Tree nodes, runs dynamic graffiti raids,
+// honors Peaceful Start war prompts, and coordinates Article 5 allied counter-attacks.
 export function generateAiOrdersAndActions(
   state: GameState,
   lang: Language = 'en',
-): { orders: ArmyOrder[]; chronicleEntries: ChronicleEntry[] } {
+): {
+  orders: ArmyOrder[];
+  chronicleEntries: ChronicleEntry[];
+  pendingWarPrompt?: PendingWarPrompt;
+} {
   const aiOrders: ArmyOrder[] = [];
   const chronicleEntries: ChronicleEntry[] = [];
+  let pendingWarPrompt: PendingWarPrompt | undefined = state.pendingWarPrompt ?? undefined;
+
   const summaries = computeCountrySummaries(state);
   const scenario = SCENARIOS[state.scenarioId];
   const isSpectator = state.gameMode === 'bot_spectator';
   const diff = getDifficultyConfig(state.difficulty);
-  const isExtremePlus = !isSpectator && state.difficulty === 'extreme_plus';
+  const aggrCfg = AI_AGGRESSIVENESS_CONFIG[state.aiAggressiveness ?? 'normal'];
+  const hardcore = isHardcoreGeopolitics(state.difficulty, state.uiMode);
+  const isCoalitionTier =
+    !isSpectator &&
+    (state.difficulty === 'extreme' ||
+      state.difficulty === 'extreme_plus' ||
+      state.difficulty === 'impossible' ||
+      state.difficulty === 'extreme_ultra_impossible');
+
   const budgetMult = isSpectator ? 1.0 : diff.aiBudgetMult;
-  const aggrMult = isSpectator ? 1.0 : diff.aiWarAggrMult;
+  const effectiveWarMult = isSpectator
+    ? aggrCfg.warFreqMult
+    : diff.aiWarAggrMult * aggrCfg.warFreqMult;
 
   const provsByCountry: Record<string, ProvinceState[]> = {};
   for (const prov of Object.values(state.provinces)) {
@@ -51,9 +76,9 @@ export function generateAiOrdersAndActions(
 
     const countryLabel = country.displayName || country.name[lang];
 
-    // 0. Honest AI Tech Tree research using real researchPoints (EXTREME+ prioritizes missiles & space faster)
-    const techUnlocksPerCycle = isExtremePlus ? 2 : 1;
-    const priorityOrder = isExtremePlus
+    // 0. Honest AI Tech Tree research using real researchPoints
+    const techUnlocksPerCycle = isCoalitionTier ? 2 : 1;
+    const priorityOrder = isCoalitionTier
       ? ['mil_doctrine', 'mil_armor', 'mil_aerospace', 'mil_missiles', 'log_orbital_shields', 'eco_fusion']
       : [];
     for (let t = 0; t < techUnlocksPerCycle; t++) {
@@ -155,11 +180,131 @@ export function generateAiOrdersAndActions(
       }
     }
 
-    // 3. AI War & Counter-attack Maneuvers
+    // 2b. Periodic AI Dynamic Covert Graffiti / Vandalism Missions (scales with AI Aggressiveness)
+    if (
+      state.totalDays >= 30 &&
+      state.totalDays % 30 === 0 &&
+      country.treasury >= 22 &&
+      seededRand(state.totalDays * 3 + country.id.charCodeAt(0) * 19) > 1 - aggrCfg.graffitiChance * 0.22
+    ) {
+      const rivalId =
+        country.atWarWith[0] ??
+        ownedProvs
+          .flatMap((p) => p.neighbors)
+          .map((nid) => state.provinces[nid]?.ownerId)
+          .find(
+            (oid) =>
+              oid &&
+              oid !== country.id &&
+              !country.allies.includes(oid) &&
+              !country.nonAggressionWith[oid],
+          );
+      if (rivalId) {
+        const rivalProvs = provsByCountry[rivalId];
+        const targetCap =
+          rivalProvs?.find((p) => p.isCapital) ?? rivalProvs?.[0];
+        if (targetCap) {
+          const slogan = getCountryGraffitiSlogan(country.id, countryLabel);
+          const now = Date.now();
+          country.treasury = Number((country.treasury - 10).toFixed(1));
+          targetCap.graffitiTag = {
+            slogan,
+            attackerId: country.id,
+            timestamp: now,
+          };
+          state.graffitiVisuals = [
+            {
+              id: `graf_ai_${state.totalDays}_${country.id}_${targetCap.id}`,
+              provinceId: targetCap.id,
+              cityName: targetCap.name,
+              attackerId: country.id,
+              slogan,
+              centroid: targetCap.centroid,
+              createdAt: now,
+            },
+            ...(state.graffitiVisuals ?? []),
+          ].slice(0, 12);
+          state.mapPulses = [
+            {
+              id: `pulse_graf_ai_${now}_${country.id}`,
+              kind: 'graffiti' as const,
+              centroid: targetCap.centroid,
+              color: '#F43F5E',
+              label: `🎨 ${slogan}`,
+              createdAt: now,
+            },
+            ...(state.mapPulses ?? []),
+          ].slice(0, 14);
+          chronicleEntries.push({
+            id: `chr_graf_ai_${state.totalDays}_${country.id}`,
+            turn: state.turn,
+            day: state.day,
+            year: state.year,
+            monthIndex: state.monthIndex,
+            type: 'graffiti' as const,
+            title: lang === 'pl' ? 'Sabotaż Graffiti AI' : 'Covert Graffiti Vandalism',
+            detail: `${countryLabel} → ${targetCap.name}: "${slogan}"`,
+            countryIds: [country.id, rivalId],
+          });
+          if (rivalId === state.playerCountryId) {
+            state.notifications.unshift({
+              id: `notif_graf_ai_${now}`,
+              type: 'alert',
+              title: lang === 'pl' ? 'Wandalizm Graffiti w Stolicy!' : 'Graffiti Vandalism Alert!',
+              message: `${countryLabel} tagged ${targetCap.name}: "${slogan}"`,
+              createdAt: now,
+            });
+          }
+        }
+      }
+    }
+
+    // 3. AI War & Allied Counter-attack Maneuvers
     if (isAtWar) {
+      // Allied coordinated counter-attack check in hardcore geopolitics
+      if (hardcore && country.allies.length > 0) {
+        for (const allyId of country.allies) {
+          const ally = state.countries[allyId];
+          if (!ally || ally.eliminated) continue;
+          for (const allyEnemy of ally.atWarWith) {
+            if (
+              allyEnemy !== country.id &&
+              !country.atWarWith.includes(allyEnemy) &&
+              !country.allies.includes(allyEnemy) &&
+              !country.nonAggressionWith[allyEnemy] &&
+              !country.truceWith[allyEnemy]
+            ) {
+              if (allyEnemy === state.playerCountryId && state.peacefulStartEnabled && !isSpectator) {
+                if (!pendingWarPrompt) {
+                  pendingWarPrompt = {
+                    id: `wp_${state.totalDays}_${country.id}`,
+                    attackerId: country.id,
+                    attackerName: countryLabel,
+                    totalAttackerArmy: summaries[country.id]?.totalArmy ?? 0,
+                    coalitionAllies: [ally.displayName],
+                    vetoDpCost: 2,
+                    vetoAllowed: state.difficulty !== 'extreme_ultra_impossible',
+                    reason:
+                      lang === 'pl'
+                        ? `${countryLabel} zamierza dołączyć do wojny sojuszniczej przeciwko Tobie.`
+                        : `${countryLabel} is mobilizing to honor its alliance against your nation.`,
+                  };
+                }
+              } else {
+                const enemyObj = state.countries[allyEnemy];
+                if (enemyObj && !enemyObj.eliminated) {
+                  country.atWarWith.push(allyEnemy);
+                  if (!enemyObj.atWarWith.includes(country.id)) enemyObj.atWarWith.push(country.id);
+                }
+              }
+            }
+          }
+        }
+      }
+
       for (const prov of ownedProvs) {
         const localTroops = getTotalUnits(prov.units);
-        if (localTroops < 3500) continue;
+        if (localTroops < 3200) continue;
 
         const allReachable = [...prov.neighbors, ...prov.seaNeighbors];
         const enemyAdjacent = allReachable
@@ -179,9 +324,9 @@ export function generateAiOrdersAndActions(
 
           const myTotal = summaries[country.id]?.totalArmy ?? localTroops;
           const enemyTotal = summaries[target.ownerId]?.totalArmy ?? targetTroops;
-          const winterFactor = target.weather === 'snow' ? 1.15 : 0.92;
+          const winterFactor = (target.weather === 'snow' ? 1.15 : 0.92) / Math.max(0.7, Math.min(1.4, aggrCfg.attackRatioMult));
           const shouldAttack =
-            localTroops > targetTroops * winterFactor || myTotal > enemyTotal * 1.16;
+            localTroops > targetTroops * winterFactor || myTotal > enemyTotal * (1.16 / Math.max(0.75, aggrCfg.attackRatioMult * 0.8));
 
           if (shouldAttack) {
             const sendRatio = targetTroops === 0 ? 0.55 : 0.72;
@@ -211,7 +356,7 @@ export function generateAiOrdersAndActions(
               return np && country.atWarWith.includes(np.ownerId);
             }),
           );
-          if (borderProv && prov.neighbors.includes(borderProv.id) && localTroops >= 6000) {
+          if (borderProv && prov.neighbors.includes(borderProv.id) && localTroops >= 5500) {
             const split = splitUnitsByRatio(prov.units, 0.65);
             prov.units = subtractUnits(prov.units, split);
             aiOrders.push({
@@ -261,52 +406,84 @@ export function generateAiOrdersAndActions(
         }
       }
     } else {
-      const warFreq = isSpectator ? 2 : 7;
-      const warThreshold = isSpectator
-        ? 0.8
-        : aggrMult < 0.5
-        ? 0.992
-        : aggrMult > 1.5
-        ? 0.86
-        : 0.94;
+      // Peaceful AI deciding whether to start wars — obeys AI Aggressiveness in BOTH player & spectator modes
+      const warFreq = isSpectator
+        ? Math.max(1, Math.round(2 / Math.max(0.5, aggrCfg.warFreqMult)))
+        : Math.max(2, Math.round(7 / Math.max(0.5, aggrCfg.warFreqMult)));
+
+      const baseThreshold = isSpectator ? 0.8 : 0.94;
+      const warThreshold = Math.max(
+        0.55,
+        Math.min(0.996, 1 - (1 - baseThreshold) * effectiveWarMult),
+      );
       const myStrength = summaries[country.id]?.totalArmy ?? 0;
 
       if (
         state.turn % warFreq === 0 &&
-        myStrength > (isSpectator ? 24000 : 75000) &&
+        myStrength > (isSpectator ? 22000 : 65000) &&
         seededRand(state.turn * 13 + country.id.charCodeAt(0) * 7) > warThreshold
       ) {
+        const allowAttackPlayer =
+          !isSpectator &&
+          (aggrCfg.id === 'aggressive' || aggrCfg.id === 'hyper' || isCoalitionTier);
+
         for (const prov of ownedProvs) {
           const reachableForeign = [...prov.neighbors, ...(isSpectator ? prov.seaNeighbors : [])]
             .map((id) => state.provinces[id])
-            .find(
-              (np) =>
-                np &&
-                np.ownerId !== country.id &&
-                !state.countries[np.ownerId]?.isPlayer &&
+            .find((np) => {
+              if (!np || np.ownerId === country.id) return false;
+              const ownerObj = state.countries[np.ownerId];
+              if (!ownerObj || ownerObj.eliminated) return false;
+              if (ownerObj.isPlayer && !allowAttackPlayer) return false;
+              return (
                 !country.allies.includes(np.ownerId) &&
                 !country.nonAggressionWith[np.ownerId] &&
                 !country.truceWith[np.ownerId] &&
                 country.vassalOf !== np.ownerId &&
-                (summaries[np.ownerId]?.totalArmy ?? 0) < myStrength * (isSpectator ? 0.85 : 0.45),
-            );
+                (summaries[np.ownerId]?.totalArmy ?? 0) <
+                  myStrength * (isSpectator ? 0.85 : 0.6 * aggrCfg.attackRatioMult)
+              );
+            });
           if (reachableForeign) {
             const targetCountry = state.countries[reachableForeign.ownerId];
             if (targetCountry && !targetCountry.eliminated) {
-              country.atWarWith.push(targetCountry.id);
-              targetCountry.atWarWith.push(country.id);
-              const targetLabel = targetCountry.displayName || targetCountry.name[lang];
-              chronicleEntries.push({
-                id: `chr_war_${state.totalDays}_${country.id}_${targetCountry.id}`,
-                turn: state.turn,
-                day: state.day,
-                year: state.year,
-                monthIndex: state.monthIndex,
-                type: 'war',
-                title: lang === 'pl' ? 'Wybuch wojny' : 'War Declared',
-                detail: `${countryLabel} ⚔️ ${targetLabel}`,
-                countryIds: [country.id, targetCountry.id],
-              });
+              if (targetCountry.isPlayer && state.peacefulStartEnabled && !isSpectator) {
+                if (!pendingWarPrompt) {
+                  pendingWarPrompt = {
+                    id: `wp_${state.totalDays}_${country.id}`,
+                    attackerId: country.id,
+                    attackerName: countryLabel,
+                    totalAttackerArmy: summaries[country.id]?.totalArmy ?? 0,
+                    coalitionAllies: country.allies
+                      .map((aid) => state.countries[aid]?.displayName ?? '')
+                      .filter(Boolean)
+                      .slice(0, 3),
+                    vetoDpCost: 2,
+                    vetoAllowed: state.difficulty !== 'extreme_ultra_impossible',
+                    reason:
+                      lang === 'pl'
+                        ? `${countryLabel} gromadzi armie na granicy i grozi wojną!`
+                        : `${countryLabel} massed divisions along your border and issued a war ultimatum!`,
+                  };
+                }
+              } else {
+                country.atWarWith.push(targetCountry.id);
+                targetCountry.atWarWith.push(country.id);
+                country.relations = { ...country.relations, [targetCountry.id]: -100 };
+                targetCountry.relations = { ...targetCountry.relations, [country.id]: -100 };
+                const targetLabel = targetCountry.displayName || targetCountry.name[lang];
+                chronicleEntries.push({
+                  id: `chr_war_${state.totalDays}_${country.id}_${targetCountry.id}`,
+                  turn: state.turn,
+                  day: state.day,
+                  year: state.year,
+                  monthIndex: state.monthIndex,
+                  type: 'war',
+                  title: lang === 'pl' ? 'Wybuch wojny' : 'War Declared',
+                  detail: `${countryLabel} ⚔️ ${targetLabel}`,
+                  countryIds: [country.id, targetCountry.id],
+                });
+              }
             }
             break;
           }
@@ -352,8 +529,8 @@ export function generateAiOrdersAndActions(
     }
   }
 
-  // 4. EXTREME+ Ruthless Grand-Master AI: Global Anti-Player Coalitions & Missile Tech Rush
-  if (isExtremePlus && state.totalDays >= 10) {
+  // 4. Hardcore Coalition AI (EXTREME / EXTREME+ / IMPOSSIBLE / EXTREME ULTRA IMPOSSIBLE)
+  if (isCoalitionTier && state.totalDays >= 10) {
     const player = state.countries[state.playerCountryId];
     if (player && !player.eliminated) {
       const strongAis = Object.values(state.countries).filter(
@@ -365,39 +542,73 @@ export function generateAiOrdersAndActions(
           !c.nonAggressionWith[player.id] &&
           !c.truceWith[player.id] &&
           c.vassalOf !== player.id &&
-          (summaries[c.id]?.totalArmy ?? 0) >= 30000,
+          (summaries[c.id]?.totalArmy ?? 0) >= 26000,
       );
 
-      const coalitionCore = strongAis.slice(0, 3);
-      for (const aiNation of coalitionCore) {
-        if (!aiNation.atWarWith.includes(player.id)) {
-          aiNation.atWarWith.push(player.id);
-          if (!player.atWarWith.includes(aiNation.id)) {
-            player.atWarWith.push(aiNation.id);
+      const coalitionSize =
+        state.difficulty === 'extreme_ultra_impossible'
+          ? 5
+          : state.difficulty === 'impossible'
+          ? 4
+          : 3;
+      const coalitionCore = strongAis.slice(0, coalitionSize);
+
+      if (coalitionCore.length > 0) {
+        const unengagedCoalition = coalitionCore.filter((c) => !c.atWarWith.includes(player.id));
+        if (unengagedCoalition.length > 0 && state.peacefulStartEnabled) {
+          if (!pendingWarPrompt) {
+            const lead = unengagedCoalition[0];
+            pendingWarPrompt = {
+              id: `wp_coal_${state.totalDays}_${lead.id}`,
+              attackerId: lead.id,
+              attackerName: lead.displayName || lead.name[lang],
+              totalAttackerArmy: unengagedCoalition.reduce(
+                (s, c) => s + (summaries[c.id]?.totalArmy ?? 0),
+                0,
+              ),
+              coalitionAllies: unengagedCoalition.slice(1).map((c) => c.displayName || c.name[lang]),
+              vetoDpCost: 2,
+              vetoAllowed: state.difficulty !== 'extreme_ultra_impossible',
+              reason:
+                lang === 'pl'
+                  ? `Koalicja (${unengagedCoalition.map((c) => c.displayName).join(', ')}) wystosowała ultimatum wojenne!`
+                  : `Strategic Coalition (${unengagedCoalition.map((c) => c.displayName).join(', ')}) issued a declaration of war!`,
+            };
           }
-          const aiLabel = aiNation.displayName || aiNation.name[lang];
-          chronicleEntries.push({
-            id: `chr_coal_${state.totalDays}_${aiNation.id}`,
-            turn: state.turn,
-            day: state.day,
-            year: state.year,
-            monthIndex: state.monthIndex,
-            type: 'war',
-            title: lang === 'pl' ? 'Globalna Koalicja EXTREME+' : 'EXTREME+ Global Coalition',
-            detail: `${aiLabel} ☠️⚔️ ${player.displayName}`,
-            countryIds: [aiNation.id, player.id],
-          });
-        }
-        for (const partner of coalitionCore) {
-          if (partner.id === aiNation.id) continue;
-          if (!aiNation.allies.includes(partner.id)) aiNation.allies.push(partner.id);
-          if (!partner.allies.includes(aiNation.id)) partner.allies.push(aiNation.id);
+        } else {
+          for (const aiNation of coalitionCore) {
+            if (!aiNation.atWarWith.includes(player.id)) {
+              aiNation.atWarWith.push(player.id);
+              if (!player.atWarWith.includes(aiNation.id)) {
+                player.atWarWith.push(aiNation.id);
+              }
+              aiNation.relations = { ...aiNation.relations, [player.id]: -100 };
+              player.relations = { ...player.relations, [aiNation.id]: -100 };
+              const aiLabel = aiNation.displayName || aiNation.name[lang];
+              chronicleEntries.push({
+                id: `chr_coal_${state.totalDays}_${aiNation.id}`,
+                turn: state.turn,
+                day: state.day,
+                year: state.year,
+                monthIndex: state.monthIndex,
+                type: 'war',
+                title: lang === 'pl' ? 'Globalna Koalicja' : 'Global Anti-Player Coalition',
+                detail: `${aiLabel} ☠️⚔️ ${player.displayName}`,
+                countryIds: [aiNation.id, player.id],
+              });
+            }
+            for (const partner of coalitionCore) {
+              if (partner.id === aiNation.id) continue;
+              if (!aiNation.allies.includes(partner.id)) aiNation.allies.push(partner.id);
+              if (!partner.allies.includes(aiNation.id)) partner.allies.push(aiNation.id);
+            }
+          }
         }
       }
     }
   }
 
-  return { orders: aiOrders, chronicleEntries };
+  return { orders: aiOrders, chronicleEntries, pendingWarPrompt };
 }
 
 export interface AutoPilotCommandResult {
@@ -407,7 +618,7 @@ export interface AutoPilotCommandResult {
   summaryAction?: string;
 }
 
-// Honest, zero-cheat AI Supreme Commander for Player Nation (Auto-Pilot Mode / mid-game toggle)
+// Smart Auto-Pilot Supreme Commander for Player Nation (checks real win probability >= 58% before attacking!)
 export function runAutoPilotCommand(
   prevState: GameState,
   lang: Language = 'en',
@@ -476,8 +687,8 @@ export function runAutoPilotCommand(
     if (nextTechNode.id === 'log_orbital_shields') myCountry.orbitalShieldActive = true;
     summaryAction =
       lang === 'pl'
-        ? `Auto-Pilot odblokował technologię: ${nextTechNode.title.pl}.`
-        : `Auto-Pilot unlocked technology: ${nextTechNode.title.en}.`;
+        ? `Smart Auto-Pilot odblokował technologię: ${nextTechNode.title.pl}.`
+        : `Smart Auto-Pilot unlocked technology: ${nextTechNode.title.en}.`;
   }
 
   // Classify frontlines vs safe rear provinces
@@ -550,7 +761,7 @@ export function runAutoPilotCommand(
     }
   }
 
-  // 4. Rapid 5-Second Strategic Airlift (Honest conservation: transfers 40% from strongest reserve/rear hub to weakest front)
+  // 4. Rapid 5-Second Strategic Airlift (transfers 40% from strongest reserve/rear hub to weakest front)
   const allowAirlift = opts.allowAirlift !== false;
   let nextUpcomingAirlift = prevState.autoPilotNextAirliftAt ?? 0;
   if (allowAirlift && ownedProvs.length > 1) {
@@ -561,7 +772,7 @@ export function runAutoPilotCommand(
     const destTotal = getTotalUnits(dest.units);
     const qualifiesAsDonor = (p: ProvinceState) =>
       p.id !== dest.id &&
-      getTotalUnits(p.units) >= 4500 &&
+      getTotalUnits(p.units) >= 4000 &&
       getTotalUnits(p.units) > destTotal * 1.15;
     const eligibleRear = rearProvs.filter(qualifiesAsDonor);
     const sourcePool = eligibleRear.length > 0 ? eligibleRear : ownedProvs.filter(qualifiesAsDonor);
@@ -595,13 +806,13 @@ export function runAutoPilotCommand(
         });
         const msg =
           lang === 'pl'
-            ? `Most powietrzny Auto-Pilota: ${count.toLocaleString('en-US')} wojsk z ${src.name} do ${dest.name}!`
-            : `Auto-Pilot Airlift: Deployed ${count.toLocaleString('en-US')} troops from ${src.name} to ${dest.name}!`;
+            ? `Smart Auto-Pilot Desant: ${count.toLocaleString('en-US')} wojsk z ${src.name} do ${dest.name}!`
+            : `Smart Auto-Pilot Airlift: Deployed ${count.toLocaleString('en-US')} troops from ${src.name} to ${dest.name}!`;
         summaryAction = msg;
         nextNotifications.unshift({
           id: `notif_air_${now}`,
           type: 'info',
-          title: lang === 'pl' ? 'Szybki Desant Auto-Pilota' : 'Auto-Pilot Rapid Airlift',
+          title: lang === 'pl' ? 'Szybki Desant Smart Auto-Pilota' : 'Smart Auto-Pilot Rapid Airlift',
           message: msg,
           createdAt: now,
         });
@@ -612,7 +823,7 @@ export function runAutoPilotCommand(
           year: prevState.year,
           monthIndex: prevState.monthIndex,
           type: 'event',
-          title: lang === 'pl' ? 'Most Powietrzny AI' : 'AI Rapid Airlift',
+          title: lang === 'pl' ? 'Most Powietrzny AI' : 'Smart Auto-Pilot Airlift',
           detail: `${src.name} ✈️ ${dest.name} (${count.toLocaleString('en-US')})`,
           countryIds: [myCountry.id],
         });
@@ -620,22 +831,30 @@ export function runAutoPilotCommand(
     }
   }
 
-  // 5. Launch multi-front coordinated counter-offensives when at war and locally superior
+  // 5. Smart Counter-Offensives: evaluates real win odds via calculateWinChance and attacks ONLY when odds favor victory (>= 58%)
   if (isAtWar && myCountry.movementPoints >= 1) {
     let launched = 0;
     for (const fp of frontProvs) {
       if (myCountry.movementPoints < 1 || launched >= 2) break;
       const localTroops = getTotalUnits(fp.units);
-      if (localTroops < 5000) continue;
+      if (localTroops < 4000) continue;
       const weakEnemy = [...fp.neighbors, ...fp.seaNeighbors]
         .map((id) => nextProvs[id])
         .filter((np) => np && myCountry.atWarWith.includes(np.ownerId))
         .sort((a, b) => getTotalUnits(a.units) - getTotalUnits(b.units))[0];
-      if (weakEnemy && localTroops >= Math.max(4000, getTotalUnits(weakEnemy.units) * 1.15)) {
+      if (weakEnemy) {
         const send = splitUnitsByRatio(fp.units, 0.65);
         const sendCount = getTotalUnits(send);
-        if (sendCount >= 1500) {
-          const isNaval = !fp.neighbors.includes(weakEnemy.id) && fp.seaNeighbors.includes(weakEnemy.id);
+        if (sendCount < 1200) continue;
+        const isNaval = !fp.neighbors.includes(weakEnemy.id) && fp.seaNeighbors.includes(weakEnemy.id);
+        const odds = calculateWinChance({
+          state: { ...prevState, countries: nextCountries, provinces: nextProvs },
+          attackerId: myCountry.id,
+          attackerUnits: send,
+          defenderProvince: weakEnemy,
+          isNavalAssault: isNaval,
+        });
+        if (getTotalUnits(weakEnemy.units) === 0 || odds.chancePct >= 58) {
           const isRail = !isNaval && (fp.buildings.includes('railway') || weakEnemy.buildings.includes('railway'));
           const baseDur = isNaval ? 6 : 4;
           fp.units = subtractUnits(fp.units, send);
@@ -657,8 +876,8 @@ export function runAutoPilotCommand(
           summaryAction =
             summaryAction ??
             (lang === 'pl'
-              ? `Auto-Pilot wyprowadza skoordynowany atak na ${weakEnemy.name}.`
-              : `Auto-Pilot launched coordinated offensive toward ${weakEnemy.name}.`);
+              ? `Smart Auto-Pilot atakuje ${weakEnemy.name} (szansa ${odds.chancePct}%).`
+              : `Smart Auto-Pilot offensive toward ${weakEnemy.name} (${odds.chancePct}% win odds).`);
         }
       }
     }

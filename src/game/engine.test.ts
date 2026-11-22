@@ -11,6 +11,7 @@ import {
   getTotalUnits,
 } from './combat';
 import {
+  adjustRelations,
   advanceDay,
   appointMinister,
   assimilateProvince,
@@ -19,31 +20,46 @@ import {
   cancelOrder,
   clearTechQueue,
   constructBuilding,
+  continueEternalEmpire,
   createNewGame,
   deploySpy,
   designCustomUnit,
+  developProvince,
   executeBlackOp,
   executeTurn,
   fundSpaceOceanColony,
+  grantCommanderXp,
   issueArmyOrder,
   launchSpySatellite,
   launchStrategicStrike,
   planTechTreePath,
+  plunderProvince,
   proposeDiplomacy,
+  proposeExtendedDiplomacy,
   reconstructProvinceCity,
+  recruitGeneral,
   recruitUnits,
+  reformHistoricEmpire,
   repayLoan,
   researchTechNode,
+  resolvePeaceConference,
   resolveRandomEvent,
+  resolveWarPrompt,
+  resurrectAncientFaith,
+  sendMissionaries,
   setTaxRate,
+  setVassalTribute,
   takeBankLoan,
   toggleAutoPilot,
+  togglePeacefulStart,
   toggleStraitBlockade,
   tradeMarketResource,
   triggerAutoPilotAirliftNow,
+  unlockLegacyPerk,
+  updateBudgetSliders,
   voteWorldCouncil,
 } from './engine';
-import { getDifficultyConfig } from '../data/scenarios';
+import { AI_AGGRESSIVENESS_CONFIG, getDifficultyConfig } from '../data/scenarios';
 import { runAutoPilotCommand } from './ai';
 import {
   MAJOR_CITIES,
@@ -160,7 +176,8 @@ test('8 Difficulty tiers scale player income/attack, AI defense/economy, and map
 
   assert.equal(autoPilot.autoPilotEnabled, true);
   assert.equal(normal.autoPilotEnabled, false);
-  assert.equal(getDifficultyConfig('very_easy').id, 'extremely_easy');
+  assert.equal(getDifficultyConfig('very_easy').id, 'very_easy');
+  assert.equal(getDifficultyConfig('extremely_easy').id, 'extremely_easy');
   assert.equal(getFpsCapIntervalMs('unlimited'), 0);
   assert.ok(Math.abs(getFpsCapIntervalMs(144) - 1000 / 144) < 0.01);
 
@@ -616,7 +633,9 @@ test('Cabinet, Global Market, World Council, Megaprojects, Tactical Advisor, and
 
 test('EXTREME+ difficulty enforces +75% AI economy, +55% AI defense, and global anti-player coalitions', () => {
   const normal = createNewGame('2026', '616', 'normal', 'en');
-  let extPlus = createNewGame('2026', '616', 'extreme_plus', 'en');
+  let extPlus = createNewGame('2026', '616', 'extreme_plus', 'en', 'player', null, {
+    peacefulStartEnabled: false,
+  });
 
   const gerNormPower = computeArmyPower({ infantry: 10000 }, '2026', 'defense', 0, {
     difficulty: 'normal',
@@ -640,7 +659,7 @@ test('EXTREME+ difficulty enforces +75% AI economy, +55% AI defense, and global 
     'EXTREME+ AI should form a coalition against the player',
   );
   assert.ok(
-    extPlus.chronicle.some((c) => c.title.includes('EXTREME+')),
+    extPlus.chronicle.some((c) => c.title.includes('Coalition')),
     'Chronicle should record EXTREME+ Global Coalition formation',
   );
 });
@@ -957,3 +976,282 @@ test('Custom Unit Designer, Orbital Spy Satellites, Maritime Strait Blockades, a
   assert.equal(recCity.state.provinces[cap.id].nuclearDevastation, 0);
   assert.ok(recCity.state.provinces[cap.id].economy > ecoBefore);
 });
+
+test('V4.0 World Atlas includes Polar Antarctica sectors, Svalbard, Greenland, and Singapore', () => {
+  const state = createNewGame('2026', '616', 'normal', 'en');
+  for (const id of ['010_arctowski', '010_amundsen', '010_vostok', '010_concordia', '744', '304', '702']) {
+    assert.ok(state.countries[id], `Expected country ${id} in 2026 world atlas`);
+    const provs = Object.values(state.provinces).filter((p) => p.ownerId === id);
+    assert.ok(provs.length >= 1, `Expected clickable province for ${id}`);
+  }
+});
+
+test('V4.0 True 100% World Conquest victory triggers only at 100% ownership and Eternal Empire continues', () => {
+  let state = createNewGame('2026', '616', 'normal', 'en', 'player', null, {
+    peacefulStartEnabled: false,
+  });
+  const allProvIds = Object.keys(state.provinces);
+  // 99% ownership must NOT trigger victory
+  for (let i = 0; i < allProvIds.length - 1; i++) {
+    state.provinces[allProvIds[i]].ownerId = '616';
+  }
+  state = advanceDay(state, 'en');
+  assert.equal(state.outcome, 'ongoing', 'Must not trigger victory below 100% world conquest');
+
+  // 100% ownership triggers victory
+  state.provinces[allProvIds[allProvIds.length - 1]].ownerId = '616';
+  state = advanceDay(state, 'en');
+  assert.equal(state.outcome, 'victory', '100% world conquest must trigger victory');
+
+  // Eternal Empire continues sandbox play
+  const eternal = continueEternalEmpire(state);
+  assert.equal(eternal.outcome, 'ongoing');
+  assert.equal(eternal.eternalEmpireMode, true);
+  const nextEternal = advanceDay(eternal, 'en');
+  assert.equal(nextEternal.outcome, 'ongoing', 'Eternal Empire mode stays ongoing after victory');
+});
+
+test('V4.0 Commander XP leveling, ranks, and animated XP popups update cleanly', () => {
+  let state = createNewGame('2026', '616', 'normal', 'en');
+  assert.equal(state.commanderLevel, 1);
+  assert.equal(state.commanderRankId, 'cadet');
+
+  state = grantCommanderXp(state, 500, 'Campaign Victory');
+  assert.ok(state.commanderLevel >= 4);
+  assert.notEqual(state.commanderRankId, 'cadet');
+  assert.ok(state.xpPopups.length >= 1);
+  assert.equal(state.xpPopups[0].amount, 500);
+});
+
+test('V4.0 Peaceful Start suppresses Turn-1 wars & War Acceptance Modal handles Veto vs Accept (and locks veto on Extreme Ultra Impossible)', () => {
+  let state = createNewGame('1939', '616', 'normal', 'en', 'player', null, {
+    peacefulStartEnabled: true,
+    aiAggressiveness: 'hyper',
+  });
+  // Peaceful Start suppresses Turn-1 initial war in 1939 scenario
+  assert.equal(state.countries['616'].atWarWith.length, 0, 'Peaceful Start should prevent Turn-1 wars on campaign start');
+
+  const noPeaceState = createNewGame('1939', '616', 'normal', 'en', 'player', null, {
+    peacefulStartEnabled: false,
+  });
+  assert.ok(noPeaceState.countries['616'].atWarWith.length > 0, '1939 scenario starts at war when Peaceful Start is OFF');
+
+  // Can toggle Peaceful Start off mid-game
+  state = togglePeacefulStart(state, false);
+  assert.equal(state.peacefulStartEnabled, false);
+
+  // Pending War Prompt can be vetoed if DP is sufficient
+  state = {
+    ...state,
+    countries: {
+      ...state.countries,
+      '616': { ...state.countries['616'], diplomacyPoints: 6 },
+    },
+    pendingWarPrompt: {
+      id: 'wp_test',
+      attackerId: '643',
+      attackerName: 'Russia',
+      reason: 'Border mobilization',
+      totalAttackerArmy: 120000,
+      vetoDpCost: 3,
+      vetoAllowed: true,
+      coalitionAllies: [],
+    },
+  };
+  const vetoed = resolveWarPrompt(state, false, 'en');
+  assert.equal(vetoed.error, undefined);
+  assert.equal(vetoed.state.pendingWarPrompt, null);
+  assert.ok(!vetoed.state.countries['616'].atWarWith.includes('643'));
+  assert.ok((vetoed.state.countries['616'].truceWith['643'] ?? 0) >= 4);
+
+  // Veto blocked in EXTREME ULTRA IMPOSSIBLE
+  const euiState = {
+    ...createNewGame('2026', '616', 'extreme_ultra_impossible', 'en'),
+    pendingWarPrompt: {
+      id: 'wp_eui',
+      attackerId: '643',
+      attackerName: 'Russia',
+      reason: 'Global Coalition',
+      totalAttackerArmy: 250000,
+      vetoDpCost: 3,
+      vetoAllowed: false,
+      coalitionAllies: ['112'],
+    },
+  };
+  const blockedVeto = resolveWarPrompt(euiState, false, 'en');
+  assert.ok(blockedVeto.error, 'Veto must be rejected on extreme_ultra_impossible');
+  const accepted = resolveWarPrompt(euiState, true, 'en');
+  assert.equal(accepted.error, undefined);
+  assert.ok(accepted.state.countries['616'].atWarWith.includes('643'));
+});
+
+test('V4.0 Article 5 Collective Defense & Allied Liberation Territory Transfer work deterministically', () => {
+  let state = createNewGame('2026', '616', 'normal', 'en', 'player', null, {
+    peacefulStartEnabled: false,
+    uiMode: 'ultra_realistic',
+  });
+  // Form alliance between Poland (616) and Lithuania (440)
+  state.countries['616'].allies = ['440'];
+  state.countries['440'].allies = ['616'];
+  // Russia (643) accepts war prompt against Poland -> Lithuania must auto-join via Article 5
+  state.pendingWarPrompt = {
+    id: 'wp_art5',
+    attackerId: '643',
+    attackerName: 'Russia',
+    reason: 'Invasion',
+    totalAttackerArmy: 100000,
+    vetoDpCost: 3,
+    vetoAllowed: true,
+    coalitionAllies: [],
+  };
+  const warRes = resolveWarPrompt(state, true, 'en');
+  state = warRes.state;
+  assert.ok(state.countries['440'].atWarWith.includes('643'), 'Ally Lithuania must auto-join via Article 5');
+
+  // Allied Liberation: Russia occupies a Lithuanian province, Poland reconquers it -> auto-transfers back to Lithuania
+  const litProv = Object.values(state.provinces).find((p) => p.originalCountryId === '440')!;
+  const polProv = Object.values(state.provinces).find(
+    (p) => p.ownerId === '616' && p.neighbors.includes(litProv.id),
+  )!;
+  assert.ok(litProv && polProv);
+  litProv.ownerId = '643';
+  litProv.units = { infantry: 500 };
+  polProv.units = { infantry: 35000 };
+  const marchRes = issueArmyOrder(state, polProv.id, litProv.id, { infantry: 30000 });
+  assert.equal(marchRes.error, undefined);
+  state = marchRes.state;
+  for (let d = 0; d < 6; d++) {
+    state = advanceDay(state, 'en');
+  }
+  assert.equal(
+    state.provinces[litProv.id].ownerId,
+    '440',
+    'Liberated allied core province must return to ally 440',
+  );
+});
+
+test('V4.0 Dynamic Country-Aware Covert Graffiti writes slogan & pulses onto province', () => {
+  let state = createNewGame('2026', '616', 'normal', 'en');
+  state.countries['616'].treasury = 300;
+  state.countries['276'].spiedUntil = state.turn + 5;
+  const berlin = Object.values(state.provinces).find((p) => p.ownerId === '276')!;
+  const opRes = executeBlackOp(state, '276', 'graffiti_vandalism', 'en', {
+    targetProvinceId: berlin.id,
+    customSlogan: 'SOLIDARITY FOREVER!',
+  });
+  assert.equal(opRes.error, undefined);
+  state = opRes.state;
+  assert.equal(state.provinces[berlin.id].graffitiTag?.slogan, 'SOLIDARITY FOREVER!');
+  assert.ok(state.graffitiVisuals.some((g) => g.provinceId === berlin.id && g.slogan === 'SOLIDARITY FOREVER!'));
+  assert.ok(state.mapPulses.some((p) => p.kind === 'graffiti'));
+});
+
+test('V4.0 Custom Nation, Budget Sliders, Province Actions, Ancient Faiths, Historic Empires, Generals, Legacy Perks, Peace Conference & AI Aggressiveness', () => {
+  const customCfg = {
+    id: '999',
+    name: 'Baltic Republic',
+    capitalName: 'Gdynia',
+    colorHex: '#06B6D4',
+    ideology: 'republic' as const,
+    religion: 'catholic' as const,
+    culture: 'west_slavic' as const,
+    provinceIds: ['616_p10', '616_p13'],
+    flag: { layout: 'bicolor_h' as const, colors: ['#06B6D4', '#FFFFFF'] as [string, string], emblem: 'star_center' as const },
+  };
+  let state = createNewGame('2026', '616', 'normal', 'en', 'player', null, {
+    aiAggressiveness: 'hyper',
+    uiMode: 'ultra_realistic',
+    customNation: customCfg,
+  });
+  assert.equal(state.playerCountryId, '999');
+  assert.equal(state.countries['999'].displayName, 'Baltic Republic');
+  assert.equal(state.aiAggressiveness, 'hyper');
+  assert.ok(AI_AGGRESSIVENESS_CONFIG.hyper.warFreqMult > AI_AGGRESSIVENESS_CONFIG.friendly.warFreqMult);
+
+  state.countries['999'].treasury = 500;
+  state.countries['999'].diplomacyPoints = 20;
+  state.countries['999'].legacyPoints = 120;
+  const provId = '616_p10';
+
+  // Budget Sliders
+  state = updateBudgetSliders(state, { taxRate: 18, goodsSpending: 15, researchSpending: 16 });
+  assert.equal(state.countries['999'].budgetSliders?.goodsSpending, 15);
+  assert.equal(state.countries['999'].taxRate, 18);
+
+  // Develop & Missionaries
+  const devRes = developProvince(state, provId, 'en');
+  assert.equal(devRes.error, undefined);
+  state = devRes.state;
+  assert.ok(state.provinces[provId].development > 1);
+
+  const misRes = sendMissionaries(state, provId, 'en');
+  assert.equal(misRes.error, undefined);
+  state = misRes.state;
+
+  // Ancient Faith Resurrection
+  const faithRes = resurrectAncientFaith(state, 'slavic_rodzimowierstwo', 'en');
+  assert.equal(faithRes.error, undefined);
+  state = faithRes.state;
+  assert.equal(state.countries['999'].religion, 'slavic_rodzimowierstwo');
+
+  // Generals & Legacy Perks
+  const beforeGens = state.countries['999'].generals.length;
+  const genRes = recruitGeneral(state, 'armor', 'en');
+  assert.equal(genRes.error, undefined);
+  state = genRes.state;
+  assert.equal(state.countries['999'].generals.length, beforeGens + 1);
+
+  const legRes = unlockLegacyPerk(state, 'leg_iron_discipline', 'en');
+  assert.equal(legRes.error, undefined);
+  state = legRes.state;
+  assert.ok(state.countries['999'].unlockedLegacyPerks.includes('leg_iron_discipline'));
+
+  // Relations, Extended Diplomacy & Peace Conference
+  const relRes = adjustRelations(state, '112', 'improve', 'en');
+  assert.equal(relRes.error, undefined);
+  state = relRes.state;
+  assert.ok((state.countries['999'].relations['112'] ?? 0) > 0);
+
+  const extRes = proposeExtendedDiplomacy(state, '112', 'guarantee', 'en');
+  assert.equal(extRes.error, undefined);
+  state = extRes.state;
+  assert.ok(state.countries['999'].guarantees.includes('112'));
+
+  // Historic Empire Reformation (give 20 provinces)
+  const extraProvs = Object.keys(state.provinces).slice(0, 20);
+  for (const pid of extraProvs) state.provinces[pid].ownerId = '999';
+  const empRes = reformHistoricEmpire(state, 'polish_lithuanian_commonwealth', 'en');
+  assert.equal(empRes.error, undefined);
+  state = empRes.state;
+  assert.equal(state.countries['999'].reformedEmpireId, 'polish_lithuanian_commonwealth');
+
+  // Peace Conference
+  state.countries['999'].atWarWith = ['643'];
+  state.countries['643'].atWarWith = ['999'];
+  const rusProv = Object.values(state.provinces).find((p) => p.ownerId === '643')!;
+  const peaceRes = resolvePeaceConference(
+    state,
+    {
+      enemyId: '643',
+      demandedProvinceIds: [rusProv.id],
+      warReparations: true,
+      demilitarize: false,
+      forceVassalize: false,
+    },
+    'en',
+  );
+  assert.equal(peaceRes.error, undefined);
+  assert.equal(peaceRes.state.provinces[rusProv.id].ownerId, '999');
+  assert.ok(!peaceRes.state.countries['999'].atWarWith.includes('643'));
+
+  // Vassal Tribute & Plunder on non-core
+  peaceRes.state.countries['999'].vassals = ['440'];
+  peaceRes.state.countries['440'].vassalOf = '999';
+  const tribRes = setVassalTribute(peaceRes.state, '440', 30);
+  assert.equal(tribRes.error, undefined);
+  assert.equal(tribRes.state.countries['440'].vassalTributePct, 30);
+
+  const plunderRes = plunderProvince(peaceRes.state, rusProv.id, 'en');
+  assert.equal(plunderRes.error, undefined);
+});
+

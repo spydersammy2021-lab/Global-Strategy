@@ -83,7 +83,7 @@ test('Export and Import Blocks Account bundle enforces Password/PIN check and pr
     accountId: reg.account.id,
     label: 'Polska 2026',
     scenarioId: '2026',
-    playerCountryId: '616',
+    countryId: '616',
     turn: 1,
     year: 2026,
     areaKm2: 312696,
@@ -135,7 +135,7 @@ test('Blocks Hall of Fame stores and sorts records cleanly in localStorage', () 
       nickname: 'Mateusz',
       countryName: 'Polska',
       scenarioId: '2026',
-      turn: 12,
+      turns: 12,
       areaKm2: 410000,
       powerScore: 185000,
     });
@@ -144,7 +144,7 @@ test('Blocks Hall of Fame stores and sorts records cleanly in localStorage', () 
       nickname: 'Dowódca',
       countryName: 'USA',
       scenarioId: '2026',
-      turn: 8,
+      turns: 8,
       areaKm2: 9833517,
       powerScore: 620000,
     });

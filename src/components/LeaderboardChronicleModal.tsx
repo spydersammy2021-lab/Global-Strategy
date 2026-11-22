@@ -392,7 +392,7 @@ export function LeaderboardChronicleModal({
                           {entry.nickname} · <span className="text-amber-300">{entry.countryName}</span>
                         </div>
                         <div className="text-[11px] text-slate-400 font-mono-num">
-                          {entry.accountId} · {entry.scenarioId} · {t.turn} {entry.turn}
+                          {entry.accountId} · {entry.scenarioId} · {t.turn} {entry.turns}
                         </div>
                       </div>
                     </div>

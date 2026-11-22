@@ -523,6 +523,90 @@ export function buildWorldMapData(): WorldMapData {
     }
   }
 
+  // --- VERSION 4.0: Playable Polar Antarctica Sectors (4 clickable research sectors) ---
+  if (antarcticaRings.length > 0) {
+    const antSpecs = [
+      { id: '010_arctowski', name: 'Arctowski Antarctic Sector', cap: 'Arctowski Station', xFrac: 0.25 },
+      { id: '010_amundsen', name: 'Amundsen-Scott South Pole', cap: 'South Pole', xFrac: 0.45 },
+      { id: '010_vostok', name: 'Vostok Ice Core Sector', cap: 'Vostok Station', xFrac: 0.65 },
+      { id: '010_concordia', name: 'Concordia Dome Sector', cap: 'Concordia Base', xFrac: 0.85 },
+    ];
+    const antSeeds: Point[] = antSpecs.map((s) => [WORLD_WIDTH * s.xFrac, WORLD_HEIGHT * 0.92]);
+
+    for (let sIdx = 0; sIdx < antSpecs.length; sIdx++) {
+      const spec = antSpecs[sIdx];
+      countryMetas[spec.id] = getCountryMeta(spec.id, spec.name);
+      const clipped: Point[][] = [];
+      for (const ring of antarcticaRings) {
+        let cur = ring;
+        for (let j = 0; j < antSeeds.length; j++) {
+          if (j === sIdx) continue;
+          cur = clipRingByBisector(cur, antSeeds[sIdx], antSeeds[j]);
+          if (cur.length < 3) break;
+        }
+        if (cur.length >= 3 && polygonArea(cur) > 1.0) {
+          clipped.push(cur);
+        }
+      }
+      if (clipped.length > 0) {
+        let biggest = clipped[0];
+        let maxA = 0;
+        for (const r of clipped) {
+          const a = polygonArea(r);
+          if (a > maxA) {
+            maxA = a;
+            biggest = r;
+          }
+        }
+        provinces.push({
+          id: `${spec.id}_p0`,
+          countryOrigId: spec.id,
+          name: spec.name,
+          capitalCity: spec.cap,
+          rings: clipped,
+          centroid: ringCentroid(biggest),
+          areaShare: 1,
+          explicitAreaKm2: countryMetas[spec.id].areaKm2,
+          isCoastal: true,
+        });
+      }
+    }
+  }
+
+  // --- VERSION 4.0: High-visibility Arctic & Strategic Island Sectors (Svalbard, Faroe Islands, Singapore) ---
+  const specialIslands = [
+    { id: '744', name: 'Svalbard', cap: 'Longyearbyen', lon: 18.0, lat: 78.2, radiusPx: 14 },
+    { id: '234', name: 'Faroe Islands', cap: 'Tórshavn', lon: -6.9, lat: 62.0, radiusPx: 7 },
+    { id: '702', name: 'Singapore', cap: 'Singapore', lon: 103.82, lat: 1.35, radiusPx: 7 },
+  ];
+  for (const isl of specialIslands) {
+    if (countryMetas[isl.id]) continue;
+    const pt = projection([isl.lon, isl.lat]);
+    if (!pt) continue;
+    countryMetas[isl.id] = getCountryMeta(isl.id, isl.name);
+    const [cx, cy] = pt;
+    const r = isl.radiusPx;
+    const hexRing: Point[] = [
+      [cx - r, cy],
+      [cx - r * 0.5, cy - r * 0.72],
+      [cx + r * 0.5, cy - r * 0.72],
+      [cx + r, cy],
+      [cx + r * 0.5, cy + r * 0.72],
+      [cx - r * 0.5, cy + r * 0.72],
+    ];
+    provinces.push({
+      id: `${isl.id}_p0`,
+      countryOrigId: isl.id,
+      name: isl.name,
+      capitalCity: isl.cap,
+      rings: [hexRing],
+      centroid: [cx, cy],
+      areaShare: 1,
+      explicitAreaKm2: countryMetas[isl.id].areaKm2,
+      isCoastal: true,
+    });
+  }
+
   const bboxes = provinces.map((p) => {
     let minX = Infinity;
     let maxX = -Infinity;
